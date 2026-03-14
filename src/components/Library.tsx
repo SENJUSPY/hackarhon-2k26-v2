@@ -15,21 +15,21 @@ const BookCover = ({ book }: { book: Book }) => {
     return (
       <div className="w-full h-full relative">
         <img src={book.coverUrl} alt={book.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-        <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors duration-300" />
+        <div className="absolute inset-0 bg-obsidian/10 group-hover:bg-transparent transition-colors duration-300" />
       </div>
     );
   }
   return (
-    <div className="w-full h-full bg-zinc-900 flex flex-col items-center justify-center p-6 text-center gap-4 border-l-4 border-emerald-500/30 relative overflow-hidden">
+    <div className="w-full h-full bg-obsidian flex flex-col items-center justify-center p-6 text-center gap-4 border-l-4 border-green/30 relative overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-100 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-green via-transparent to-transparent" />
       </div>
-      <BookOpen className="w-12 h-12 text-zinc-700 mb-2 relative z-10" />
-      <h4 className="text-zinc-400 font-serif text-sm font-medium leading-tight line-clamp-4 italic relative z-10">
+      <BookOpen className="w-12 h-12 text-silver/20 mb-2 relative z-10" />
+      <h4 className="text-snow font-display text-sm font-medium leading-tight line-clamp-4 uppercase tracking-wider relative z-10">
         {book.title}
       </h4>
-      <div className="absolute bottom-6 left-6 right-6 h-px bg-zinc-800/50" />
-      <div className="absolute top-6 left-6 right-6 h-px bg-zinc-800/50" />
+      <div className="absolute bottom-6 left-6 right-6 h-px bg-silver/10" />
+      <div className="absolute top-6 left-6 right-6 h-px bg-silver/10" />
     </div>
   );
 };
@@ -42,6 +42,7 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
   const [coverModalBook, setCoverModalBook] = useState<Book | null>(null);
   const [imageSize, setImageSize] = useState<'1K' | '2K' | '4K'>('1K');
   const [pendingCoverBooks, setPendingCoverBooks] = useState<Book[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -51,8 +52,7 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
     return () => unsubscribe();
   }, []);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []) as File[];
+  const processFiles = async (files: File[]) => {
     if (files.length === 0) return;
 
     if (!auth.currentUser && onRequireAuth) {
@@ -122,6 +122,32 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
     }
     
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []) as File[];
+    await processFiles(files);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const files = Array.from(e.dataTransfer.files) as File[];
+    await processFiles(files);
   };
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -254,21 +280,21 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
         >
           {/* Front Cover */}
           <div 
-            className="absolute inset-0 bg-zinc-800 rounded-r-sm shadow-[0_10px_50px_rgba(0,0,0,0.7)] overflow-hidden"
+            className="absolute inset-0 bg-obsidian rounded-none shadow-[0_10px_50px_rgba(0,0,0,0.7)] overflow-hidden border-l-4 border-green"
             style={{ transform: 'translateZ(0px)', backfaceVisibility: 'hidden' }}
           >
             <BookCover book={book} />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-end pb-6 gap-2">
+            <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-end pb-6 gap-2">
               <div className="flex items-center justify-center gap-2 transform translate-y-8 group-hover:translate-y-0 transition-all duration-300">
                 <button
                   onClick={(e) => handleToggleStatus(e, book)}
-                  className="p-2 bg-emerald-500/90 hover:bg-emerald-500 rounded-full text-white shadow-lg backdrop-blur-sm"
+                  className="p-2 bg-green hover:bg-snow text-obsidian shadow-lg transition-colors"
                   title={book.status === 'read' ? 'Mark as Reading' : 'Mark as Read'}
                 >
                   <CheckCircle className="w-4 h-4" />
                 </button>
                 <label
-                  className="p-2 bg-zinc-700/90 hover:bg-zinc-600 rounded-full text-white shadow-lg backdrop-blur-sm cursor-pointer"
+                  className="p-2 bg-silver/20 hover:bg-green text-snow hover:text-obsidian shadow-lg cursor-pointer transition-colors"
                   title="Upload Custom Cover"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -283,14 +309,14 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
                 <button
                   onClick={(e) => { e.stopPropagation(); setCoverModalBook(book); }}
                   disabled={generatingCovers.has(book.id)}
-                  className="p-2 bg-blue-500/90 hover:bg-blue-500 rounded-full text-white shadow-lg backdrop-blur-sm disabled:opacity-50"
+                  className="p-2 bg-silver/20 hover:bg-green text-snow hover:text-obsidian shadow-lg disabled:opacity-50 transition-colors"
                   title="Generate AI Cover"
                 >
                   {generatingCovers.has(book.id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={(e) => handleDelete(e, book.id)}
-                  className="p-2 bg-red-500/90 hover:bg-red-500 rounded-full text-white shadow-lg backdrop-blur-sm"
+                  className="p-2 bg-red-500 hover:bg-red-600 text-white shadow-lg transition-colors"
                   title="Delete Book"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -298,9 +324,9 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
               </div>
             </div>
             {/* Progress indicator on cover */}
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-900/80 backdrop-blur-sm">
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-obsidian/80 backdrop-blur-sm">
               <div 
-                className="h-full bg-emerald-500" 
+                className="h-full bg-green" 
                 style={{ width: `${(Math.max(1, book.currentPage) / book.totalPages) * 100}%` }}
               />
             </div>
@@ -363,17 +389,43 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="min-h-screen bg-zinc-950 text-zinc-100 p-8 selection:bg-emerald-500/30"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={cn(
+        "min-h-screen bg-snow text-obsidian p-8 selection:bg-green/30 transition-colors duration-300",
+        isDragging && "bg-green/5 ring-4 ring-green/20 ring-inset"
+      )}
     >
+      <AnimatePresence>
+        {isDragging && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-none"
+          >
+            <div className="bg-obsidian/90 backdrop-blur-md border-2 border-dashed border-green rounded-none p-12 flex flex-col items-center gap-6 shadow-2xl">
+              <div className="w-24 h-24 bg-green flex items-center justify-center shadow-lg">
+                <Upload className="w-12 h-12 text-obsidian animate-bounce" />
+              </div>
+              <div className="text-center">
+                <h2 className="text-4xl font-display text-green mb-2 uppercase tracking-tighter">Drop your PDF here</h2>
+                <p className="text-silver/60 uppercase tracking-widest text-xs font-bold">Add new books to your library</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="max-w-7xl mx-auto">
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-16">
           <motion.h1 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-4xl font-serif tracking-tight flex items-center gap-3"
+            className="text-5xl font-display tracking-tighter flex items-center gap-4 uppercase"
           >
-            <div className="p-2.5 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
-              <BookOpen className="w-8 h-8 text-emerald-500" />
+            <div className="p-2 bg-green">
+              <BookOpen className="w-8 h-8 text-obsidian" />
             </div>
             Flipverse
           </motion.h1>
@@ -384,18 +436,18 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
             className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto"
           >
             <div className="relative flex-1 sm:flex-none">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-silver" />
               <input
                 type="text"
-                placeholder="Search library..."
+                placeholder="SEARCH LIBRARY..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="w-full sm:w-72 bg-zinc-900/50 border border-zinc-800/80 rounded-full py-2.5 pl-11 pr-4 text-sm focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all placeholder:text-zinc-600"
+                className="w-full sm:w-72 bg-obsidian text-snow border border-silver/20 rounded-none py-3 pl-11 pr-4 text-xs uppercase tracking-widest focus:outline-none focus:border-green transition-all placeholder:text-silver/30"
               />
             </div>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 sm:px-6 py-2.5 rounded-full text-sm font-medium transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20 hover:shadow-emerald-900/40 active:scale-95 whitespace-nowrap shrink-0"
+              className="bg-green text-obsidian px-6 py-3 rounded-none text-xs font-bold uppercase tracking-widest transition-all hover:bg-obsidian hover:text-snow active:scale-95 whitespace-nowrap shrink-0"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Add Book</span>
@@ -421,34 +473,36 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
 
         {books.length === 0 ? (
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-center py-32 border border-dashed border-zinc-800/60 rounded-[2rem] bg-zinc-900/20 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex-1 flex flex-col items-center justify-center text-center py-32"
           >
-            <div className="w-20 h-20 mx-auto bg-zinc-900 rounded-full flex items-center justify-center mb-6 border border-zinc-800/80 shadow-xl">
-              <BookOpen className="w-8 h-8 text-zinc-600" />
+            <div className="w-32 h-32 bg-obsidian flex items-center justify-center mb-8 border-l-4 border-green">
+              <BookOpen className="w-16 h-16 text-silver/20" />
             </div>
-            <h2 className="text-2xl font-medium text-zinc-300 mb-2">Your library is empty</h2>
-            <p className="text-zinc-500 mb-8 max-w-sm mx-auto">Upload a PDF book to start reading. Your progress will be saved automatically.</p>
+            <h3 className="text-4xl font-display text-obsidian mb-4 uppercase tracking-tighter">Your library is empty</h3>
+            <p className="text-silver max-w-md mx-auto mb-10 uppercase tracking-widest text-xs font-bold leading-relaxed">
+              Drop your first PDF here or use the button above to start your collection.
+            </p>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="bg-zinc-100 hover:bg-white text-zinc-900 px-8 py-3 rounded-full font-medium transition-all active:scale-95 shadow-xl shadow-white/5"
+              className="bg-green text-obsidian px-10 py-4 rounded-none text-xs font-bold uppercase tracking-[0.2em] transition-all hover:bg-obsidian hover:text-snow active:scale-95"
             >
-              Upload PDF
+              Upload First Book
             </button>
           </motion.div>
         ) : (
           <div className="space-y-12">
-            <div className="flex items-center gap-4 border-b border-zinc-800/50 pb-4">
+            <div className="flex items-center gap-8 border-b border-silver/10 pb-4">
               <button
                 onClick={() => setActiveTab('reading')}
-                className={`text-lg font-medium transition-colors ${activeTab === 'reading' ? 'text-emerald-500' : 'text-zinc-500 hover:text-zinc-300'}`}
+                className={`text-xs font-bold uppercase tracking-[0.3em] transition-colors ${activeTab === 'reading' ? 'text-green' : 'text-silver hover:text-obsidian'}`}
               >
                 Reading
               </button>
               <button
                 onClick={() => setActiveTab('read')}
-                className={`text-lg font-medium transition-colors ${activeTab === 'read' ? 'text-emerald-500' : 'text-zinc-500 hover:text-zinc-300'}`}
+                className={`text-xs font-bold uppercase tracking-[0.3em] transition-colors ${activeTab === 'read' ? 'text-green' : 'text-silver hover:text-obsidian'}`}
               >
                 Read
               </button>
@@ -459,11 +513,11 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
               >
-                <h2 className="text-xl font-medium text-zinc-100 mb-6 flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-emerald-500" />
+                <h2 className="text-2xl font-display font-bold text-obsidian mb-8 flex items-center gap-3 uppercase tracking-tighter">
+                  <Clock className="w-6 h-6 text-green" />
                   Recently Opened
                 </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-6 gap-y-10">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-8 gap-y-16">
                   <AnimatePresence mode="popLayout">
                     {recentBooks.map((book, index) => renderBookCard(book, index, 'recent-'))}
                   </AnimatePresence>
@@ -475,13 +529,13 @@ export const Library = ({ onOpenBook, onRequireAuth, headerActions }: { onOpenBo
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <h2 className="text-xl font-medium text-zinc-100 mb-6 flex items-center gap-2">
-                <LibraryIcon className="w-5 h-5 text-emerald-500" />
+              <h2 className="text-2xl font-display font-bold text-obsidian mb-8 flex items-center gap-3 uppercase tracking-tighter">
+                <LibraryIcon className="w-6 h-6 text-green" />
                 {search ? 'Search Results' : 'All Books'}
               </h2>
               <motion.div 
                 layout
-                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-6 gap-y-10"
+                className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-8 gap-y-16"
               >
                 <AnimatePresence mode="popLayout">
                   {filteredBooks.map((book, index) => renderBookCard(book, index, 'all-'))}

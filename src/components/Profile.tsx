@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { db, logOut } from '../lib/firebase';
-import { handleFirestoreError, OperationType } from '../lib/db';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { User, updateProfile as updateAuthProfile } from 'firebase/auth';
 import { X, Edit2, Save, LogOut, Loader2, User as UserIcon } from 'lucide-react';
@@ -8,11 +7,6 @@ import { X, Edit2, Save, LogOut, Loader2, User as UserIcon } from 'lucide-react'
 interface UserData {
   name: string;
   email: string;
-  collegeName: string;
-  rollNumber: string;
-  curriculum: string;
-  branch: string;
-  yearOfCourse: string;
 }
 
 interface ProfileProps {
@@ -25,29 +19,20 @@ export function Profile({ user, onClose }: ProfileProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  // Form state
-  const [formData, setFormData] = useState<UserData | null>(null);
+  const [editName, setEditName] = useState('');
 
   useEffect(() => {
     const fetchUserData = async () => {
       try {
-        const path = `users/${user.uid}`;
         const docRef = doc(db, 'users', user.uid);
-        try {
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const data = docSnap.data() as UserData;
-            setUserData(data);
-            setFormData(data);
-          }
-        } catch (error) {
-          handleFirestoreError(error, OperationType.GET, path);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data() as UserData;
+          setUserData(data);
+          setEditName(data.name);
         }
-      } catch (err) {
-        console.error("Error fetching user data:", err);
-        setError("Failed to load profile data.");
+      } catch (error) {
+        console.error('Error fetching user data', error);
       } finally {
         setLoading(false);
       }
@@ -56,35 +41,14 @@ export function Profile({ user, onClose }: ProfileProps) {
   }, [user.uid]);
 
   const handleSave = async () => {
-    if (!formData) return;
     setSaving(true);
-    setError('');
     try {
-      // Update Firestore
-      const path = `users/${user.uid}`;
-      const docRef = doc(db, 'users', user.uid);
-      try {
-        await updateDoc(docRef, {
-          name: formData.name,
-          collegeName: formData.collegeName,
-          rollNumber: formData.rollNumber,
-          branch: formData.branch,
-          yearOfCourse: formData.yearOfCourse
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, path);
-      }
-
-      // Update Auth Profile if name changed
-      if (formData.name !== user.displayName) {
-        await updateAuthProfile(user, { displayName: formData.name });
-      }
-
-      setUserData(formData);
+      await updateDoc(doc(db, 'users', user.uid), { name: editName });
+      await updateAuthProfile(user, { displayName: editName });
+      setUserData(prev => prev ? { ...prev, name: editName } : null);
       setIsEditing(false);
-    } catch (err: any) {
-      console.error("Error updating profile:", err);
-      setError(err.message || "Failed to update profile.");
+    } catch (error) {
+      console.error('Error updating profile', error);
     } finally {
       setSaving(false);
     }
@@ -92,162 +56,78 @@ export function Profile({ user, onClose }: ProfileProps) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
+      <div className="fixed inset-0 bg-obsidian/90 backdrop-blur-sm z-[100] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-green animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between p-6 border-b border-zinc-800">
-          <h2 className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
-            <UserIcon className="w-5 h-5 text-red-500" />
-            User Profile
-          </h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-white transition-colors">
+    <div className="fixed inset-0 bg-obsidian/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+      <div className="bg-obsidian border border-white/10 w-full max-w-lg rounded-none shadow-2xl overflow-hidden">
+        <div className="p-6 border-b border-white/10 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <UserIcon className="w-5 h-5 text-green" />
+            <h2 className="text-lg font-display uppercase tracking-tighter text-snow">User Profile</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-1">
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg mb-6 text-sm">
-              {error}
+        <div className="p-8 space-y-8">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-24 h-24 bg-green text-obsidian rounded-none flex items-center justify-center text-4xl font-bold mb-4">
+              {userData?.name?.charAt(0) || user.email?.charAt(0)}
             </div>
-          )}
+            {isEditing ? (
+              <div className="w-full max-w-xs">
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 px-4 py-2 text-center text-snow focus:outline-none focus:border-green"
+                  autoFocus
+                />
+              </div>
+            ) : (
+              <h3 className="text-2xl text-snow font-display uppercase tracking-tight">{userData?.name}</h3>
+            )}
+            <p className="text-silver/50 text-sm mt-1">{user.email}</p>
+          </div>
 
-          {formData && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  disabled={!isEditing}
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-500 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1">Email Address</label>
-                <input
-                  type="email"
-                  disabled
-                  value={formData.email}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-500 cursor-not-allowed opacity-70"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1">College Name</label>
-                <input
-                  type="text"
-                  disabled={!isEditing}
-                  value={formData.collegeName}
-                  onChange={(e) => setFormData({ ...formData, collegeName: e.target.value })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-500 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1">Roll Number</label>
-                <input
-                  type="text"
-                  disabled={!isEditing}
-                  value={formData.rollNumber}
-                  onChange={(e) => setFormData({ ...formData, rollNumber: e.target.value })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-500 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-1">Curriculum</label>
-                <input
-                  type="text"
-                  disabled
-                  value={formData.curriculum}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-500 cursor-not-allowed opacity-70"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1">Branch</label>
-                  <select
-                    disabled={!isEditing}
-                    value={formData.branch}
-                    onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-500 transition-colors appearance-none disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    <option value="CME">CME</option>
-                    <option value="CSE">CSE</option>
-                    <option value="ECE">ECE</option>
-                    <option value="EEE">EEE</option>
-                    <option value="Civil">Civil</option>
-                    <option value="Mechanical">Mechanical</option>
-                    <option value="Automobile">Automobile</option>
-                    <option value="Mining">Mining</option>
-                    <option value="Pharmacy">Pharmacy</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1">Year</label>
-                  <select
-                    disabled={!isEditing}
-                    value={formData.yearOfCourse}
-                    onChange={(e) => setFormData({ ...formData, yearOfCourse: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-zinc-100 focus:outline-none focus:border-red-500 transition-colors appearance-none disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    <option value="1st Year">1st Year</option>
-                    <option value="2nd Year">2nd Year</option>
-                    <option value="3rd Year">3rd Year</option>
-                  </select>
-                </div>
-              </div>
+          <div className="grid grid-cols-1 gap-4 pt-4">
+            <div className="p-4 bg-white/5 border border-white/5">
+              <span className="text-[10px] uppercase tracking-widest text-silver/40 block mb-1">Account ID</span>
+              <span className="text-xs font-mono text-silver truncate block">{user.uid}</span>
             </div>
-          )}
+          </div>
         </div>
 
-        <div className="p-6 border-t border-zinc-800 bg-zinc-900/50 flex items-center justify-between">
+        <div className="p-6 bg-white/5 border-t border-white/10 flex gap-4">
+          {isEditing ? (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex-1 bg-green text-obsidian py-3 uppercase text-xs font-bold tracking-widest hover:bg-snow transition-all flex items-center justify-center gap-2"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save Changes
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="flex-1 border border-white/20 text-snow py-3 uppercase text-xs font-bold tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+            >
+              <Edit2 className="w-4 h-4" /> Edit Profile
+            </button>
+          )}
           <button
-            onClick={logOut}
-            className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-colors px-4 py-2 rounded-lg hover:bg-red-400/10 font-medium"
+            onClick={() => logOut()}
+            className="px-6 border border-red-500/30 text-red-500 py-3 uppercase text-xs font-bold tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
           >
-            <LogOut className="w-4 h-4" />
-            Sign Out
+            <LogOut className="w-4 h-4" /> Sign Out
           </button>
-          
-          <div className="flex gap-3">
-            {isEditing ? (
-              <>
-                <button
-                  onClick={() => {
-                    setIsEditing(false);
-                    setFormData(userData);
-                    setError('');
-                  }}
-                  disabled={saving}
-                  className="px-4 py-2 text-zinc-400 hover:text-white transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-lg transition-colors font-medium disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setIsEditing(true)}
-                className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded-lg transition-colors font-medium"
-              >
-                <Edit2 className="w-4 h-4" />
-                Edit Profile
-              </button>
-            )}
-          </div>
         </div>
       </div>
     </div>

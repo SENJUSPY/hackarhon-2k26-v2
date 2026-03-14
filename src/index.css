@@ -1,31 +1,71 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=DM+Sans:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  /* Pakistan Green as base for darks */
-  --color-zinc-950: #283618;
-  --color-zinc-900: #3a4b2a;
-  --color-zinc-800: #4c5f3c;
-  --color-zinc-700: #606C38; /* Dark Moss Green */
-  --color-zinc-600: #7a8a5a;
-  --color-zinc-500: #94a87c;
-  --color-zinc-400: #afc69e;
-  --color-zinc-300: #cbd9c0;
-  --color-zinc-200: #e7ece2;
-  --color-zinc-100: #FEFAE0; /* Cornsilk */
-  --color-zinc-50: #fffef5;
+  --color-snow: #efedef;
+  --color-silver: #ceccce;
+  --color-green: #6ead3a;
+  --color-graphite: #4c4947;
+  --color-obsidian: #222022;
 
-  /* Earth Yellow and Tiger's Eye as primary accents */
-  --color-emerald-400: #e6b885;
-  --color-emerald-500: #DDA15E; /* Earth Yellow */
-  --color-emerald-600: #BC6C25; /* Tiger's Eye */
-  --color-emerald-900: #283618;
+  --font-display: "Barlow Condensed", sans-serif;
+  --font-body: "DM Sans", sans-serif;
 
-  --color-blue-500: #DDA15E;
-  --color-blue-600: #BC6C25;
+  /* Overriding zinc for existing components to adapt partially */
+  --color-zinc-950: #222022;
+  --color-zinc-900: #222022;
+  --color-zinc-800: #4c4947;
+  --color-zinc-700: #4c4947;
+  --color-zinc-600: #ceccce;
+  --color-zinc-500: #ceccce;
+  --color-zinc-400: #efedef;
+  --color-zinc-300: #efedef;
+  --color-zinc-200: #efedef;
+  --color-zinc-100: #efedef;
 
-  --color-red-500: #8c4a4a;
-  --color-red-600: #6b3434;
+  --color-emerald-500: #6ead3a;
+  --color-emerald-600: #6ead3a;
 
   --text-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --text-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+@layer base {
+  body {
+    @apply font-body bg-snow text-graphite;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display uppercase tracking-wider;
+  }
+}
+
+.green-underline {
+  position: relative;
+}
+
+.green-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background-color: #6ead3a;
+  transition: width 0.3s ease;
+}
+
+.green-underline:hover::after {
+  width: 100%;
+}
+
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+.fade-in-up.visible {
+  opacity: 1;
+  transform: translateY(0);
 }

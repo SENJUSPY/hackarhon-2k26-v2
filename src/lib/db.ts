@@ -69,6 +69,7 @@ export interface Highlight {
   width: number;
   height: number;
   color: string;
+  text?: string;
 }
 
 export interface StickyNote {
@@ -84,9 +85,9 @@ export interface Book {
   id: string;
   title: string;
   coverUrl?: string;
-  fileData?: ArrayBuffer; // Optional because it might not be loaded yet or might be missing on a new device
-  videoData?: ArrayBuffer; // Optional video animation of the cover
-  hasVideo?: boolean; // Flag to indicate if video data exists in local storage
+  fileData?: ArrayBuffer;
+  videoData?: ArrayBuffer;
+  hasVideo?: boolean;
   lastOpened: number;
   currentPage: number;
   totalPages: number;

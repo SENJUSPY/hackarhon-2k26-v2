@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Book, getBook, saveBook, updateBookProgress, BookmarkPin, Highlight, StickyNote } from '../lib/db';
 import { loadPdf, renderPdfPage, extractPdfText, getPdfTextContent } from '../lib/pdf';
 import * as pdfjsLib from 'pdfjs-dist';
 import { BookFlip } from './BookFlip';
-import { ArrowLeft, Moon, Sun, ZoomIn, ZoomOut, MessageSquare, Loader2, Maximize2, Minimize2, Settings2, Type, AlignLeft, Paperclip, RotateCcw, RotateCw, Highlighter, X, StickyNote as StickyNoteIcon, Sparkles } from 'lucide-react';
+import { ArrowLeft, Moon, Sun, ZoomIn, ZoomOut, MessageSquare, Loader2, Maximize2, Minimize2, Settings2, Type, AlignLeft, Paperclip, RotateCcw, RotateCw, Highlighter, X, StickyNote as StickyNoteIcon, Sparkles, Trash2, Send, Zap } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { motion, AnimatePresence, useMotionValue, useMotionTemplate } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { v4 as uuidv4 } from 'uuid';
 
-const PIN_COLORS = ['#606C38', '#283618', '#FEFAE0', '#DDA15E', '#BC6C25', '#8c4a4a'];
+const PIN_COLORS = ['#6ead3a', '#222022', '#ceccce', '#4c4947', '#efedef', '#8c4a4a'];
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -48,12 +48,12 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
 
   // Highlighter State
   const [isHighlightMode, setIsHighlightMode] = useState(false);
-  const [highlightColor, setHighlightColor] = useState('#DDA15E'); // Default Earth Yellow
+  const [highlightColor, setHighlightColor] = useState('#6ead3a'); // Signal Green
   const [drawingHighlight, setDrawingHighlight] = useState<{ page: number, startX: number, startY: number, currentX: number, currentY: number } | null>(null);
 
   // Sticky Note State
   const [isStickyMode, setIsStickyMode] = useState(false);
-  const [stickyColor, setStickyColor] = useState('#DDA15E');
+  const [stickyColor, setStickyColor] = useState('#ceccce'); // Warm Silver
   const [activeStickyId, setActiveStickyId] = useState<string | null>(null);
 
   const pinTransform = useMotionTemplate`translate(calc(${mouseX}px - 10px), calc(${mouseY}px - 10px)) rotate(15deg)`;
@@ -103,330 +103,215 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
   }, [aiPanelOpen, showSettings]);
 
   useEffect(() => {
-    const handleMouseUp = () => {
-      const selection = window.getSelection();
-      if (selection && !selection.isCollapsed && selection.toString().trim().length > 0) {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        setSelectionMenu({
-          x: rect.left + rect.width / 2,
-          y: rect.top,
-          text: selection.toString().trim()
-        });
-      } else {
-        setSelectionMenu(null);
+    const loadData = async () => {
+      const bookData = await getBook(bookId);
+      if (bookData) {
+        setBook(bookData);
+        setCurrentPage(bookData.currentPage || 0);
+        
+        if (bookData.fileData) {
+          const pdf = await loadPdf(bookData.fileData);
+          setPdfDoc(pdf);
+          
+          // Get aspect ratio from first page
+          const firstPage = await pdf.getPage(1);
+          const viewport = firstPage.getViewport({ scale: 1 });
+          setPdfAspectRatio(viewport.width / viewport.height);
+        }
       }
     };
+    loadData();
+  }, [bookId]);
 
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, []);
+  useEffect(() => {
+    if (!pdfDoc) return;
+
+    const loadPages = async () => {
+      const pagesToLoad = [currentPage, currentPage + 1, currentPage - 1];
+      const newImages = { ...pageImages };
+      const newTexts = { ...pageTexts };
+      const newTextContent = { ...pageTextContent };
+
+      for (const pageIdx of pagesToLoad) {
+        if (pageIdx >= 0 && pageIdx < pdfDoc.numPages && !newImages[pageIdx]) {
+          newImages[pageIdx] = await renderPdfPage(pdfDoc, pageIdx + 1, bookId);
+          newTexts[pageIdx] = await extractPdfText(pdfDoc, pageIdx + 1);
+          newTextContent[pageIdx] = await getPdfTextContent(pdfDoc, pageIdx + 1);
+        }
+      }
+      setPageImages(newImages);
+      setPageTexts(newTexts);
+      setPageTextContent(newTextContent);
+    };
+
+    loadPages();
+    updateBookProgress(bookId, currentPage, Date.now());
+  }, [pdfDoc, currentPage, bookId]);
+
+  const handlePageChange = (index: number) => {
+    setCurrentPage(index);
+  };
+
+  const handleAskAi = async (query?: string) => {
+    const q = query || aiQuery;
+    if (!q.trim() || !pdfDoc) return;
+
+    setIsAiLoading(true);
+    setAiResponse('');
+    setAiPanelOpen(true);
+    
+    try {
+      const text = pageTexts[currentPage] || await extractPdfText(pdfDoc, currentPage + 1);
+      const prompt = `Context from current page (Page ${currentPage + 1}):\n${text}\n\nQuestion: ${q}`;
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+      });
+      
+      setAiResponse(response.text || "I couldn't generate a response.");
+    } catch (error) {
+      console.error('AI Error:', error);
+      setAiResponse("Sorry, I encountered an error while processing your request.");
+    } finally {
+      setIsAiLoading(false);
+      setAiQuery('');
+    }
+  };
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen();
       setIsFullscreen(true);
     } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-        setIsFullscreen(false);
-      }
+      document.exitFullscreen();
+      setIsFullscreen(false);
     }
   };
 
-  useEffect(() => {
-    const init = async () => {
-      const b = await getBook(bookId);
-      if (b) {
-        setBook(b);
-        setCurrentPage(b.currentPage);
-        if (b.fileData) {
-          const pdf = await loadPdf(b.fileData);
-          setPdfDoc(pdf);
-          
-          try {
-            const firstPage = await pdf.getPage(1);
-            const viewport = firstPage.getViewport({ scale: 1 });
-            setPdfAspectRatio(viewport.width / viewport.height);
-          } catch (e) {
-            console.error('Failed to get aspect ratio', e);
-          }
-        } else {
-          alert('This book was uploaded on another device. Please re-upload the PDF to read it here.');
-          onBack();
-        }
-      }
-    };
-    init();
-  }, [bookId]);
-
-  useEffect(() => {
-    if (!pdfDoc || !book) return;
-    
-    // Preload current, previous, and next pages
-    const pagesToLoad = [
-      currentPage - 2, currentPage - 1, 
-      currentPage, currentPage + 1, 
-      currentPage + 2, currentPage + 3
-    ].filter(p => p >= 0 && p < book.totalPages);
-
-    pagesToLoad.forEach(async (p) => {
-      // Load Images
-      if (!pageImages[p]) {
-        try {
-          // PDF pages are 1-indexed
-          const imgUrl = await renderPdfPage(pdfDoc, p + 1, book.id);
-          setPageImages(prev => ({ ...prev, [p]: imgUrl }));
-        } catch (e) {
-          console.error('Failed to render page', p, e);
-        }
-      }
-      
-      // Load Text for Text Mode
-      if (isTextMode && !pageTexts[p]) {
-        try {
-          const text = await extractPdfText(pdfDoc, p + 1);
-          setPageTexts(prev => ({ ...prev, [p]: text }));
-        } catch (e) {
-          console.error('Failed to extract text', p, e);
-        }
-      }
-
-      // Load Text Content for Highlighting
-      if (!pageTextContent[p]) {
-        try {
-          const content = await getPdfTextContent(pdfDoc, p + 1);
-          setPageTextContent(prev => ({ ...prev, [p]: content }));
-        } catch (e) {
-          console.error('Failed to get text content', p, e);
-        }
-      }
-    });
-  }, [currentPage, pdfDoc, book, pageImages, pageTexts, pageTextContent, isTextMode]);
-
-  const handlePageChange = async (newPage: number) => {
-    setCurrentPage(newPage);
-    if (book) {
-      const now = Date.now();
-      const updatedBook = { ...book, currentPage: newPage, lastOpened: now };
-      setBook(updatedBook);
-      try {
-        await updateBookProgress(book.id, newPage, now);
-      } catch (err) {
-        console.error('Failed to update book progress:', err);
-      }
-    }
-  };
-
-  // Auto-save progress periodically in the background
-  useEffect(() => {
+  const handlePageClick = (e: React.MouseEvent) => {
     if (!book) return;
 
-    const intervalId = setInterval(() => {
-      const now = Date.now();
-      setBook(prev => prev ? { ...prev, lastOpened: now } : prev);
-      updateBookProgress(book.id, currentPage, now).catch(err => {
-        console.error('Failed to auto-save progress:', err);
-      });
-    }, 30000); // Auto-save every 30 seconds
-
-    return () => clearInterval(intervalId);
-  }, [book?.id, currentPage]);
-
-  const handleAskAi = async (queryOverride?: string) => {
-    const queryToUse = queryOverride || aiQuery;
-    if (!queryToUse.trim() || !pdfDoc) return;
-    setIsAiLoading(true);
-    setAiResponse('');
-    
-    try {
-      // Extract text from current visible pages
-      const leftText = currentPage - 1 >= 0 ? await extractPdfText(pdfDoc, currentPage) : '';
-      const rightText = currentPage < book!.totalPages ? await extractPdfText(pdfDoc, currentPage + 1) : '';
-      const contextText = `${leftText}\n\n${rightText}`;
-
-      const prompt = `Context from the current pages of the book:\n"""\n${contextText}\n"""\n\nUser Question: ${queryToUse}\n\nPlease answer the user's question based on the context provided. If the answer is not in the context, say so.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite-preview',
-        contents: prompt,
-      });
-
-      setAiResponse(response.text || 'No response generated.');
-    } catch (error) {
-      console.error('AI Error:', error);
-      setAiResponse('Sorry, there was an error processing your request.');
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
-  if (!book || !pdfDoc) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <Loader2 className="w-12 h-12 text-emerald-500 animate-spin" />
-      </div>
-    );
-  }
-
-  const renderPage = (index: number) => {
-    if (index < 0 || index >= book.totalPages) return null;
-    
-    const handlePageClick = (e: React.MouseEvent) => {
-      if (!book) return;
-      
-      if (isStickyMode) {
-        e.stopPropagation();
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.height) * 100;
-
-        const newSticky: StickyNote = {
-          id: uuidv4(),
-          page: index,
-          x,
-          y,
-          text: '',
-          color: stickyColor
-        };
-
-        const updatedBook = {
-          ...book,
-          stickyNotes: [...(book.stickyNotes || []), newSticky]
-        };
-
-        setBook(updatedBook);
-        saveBook(updatedBook);
-        setActiveStickyId(newSticky.id);
-        setIsStickyMode(false); // Turn off sticky mode after placing one
-        return;
-      }
-
-      if (!selectedPinColor) return;
-      e.stopPropagation();
-
+    if (selectedPinColor) {
       const rect = e.currentTarget.getBoundingClientRect();
-      let x = ((e.clientX - rect.left) / rect.width) * 100;
-      let y = ((e.clientY - rect.top) / rect.height) * 100;
-
-      // Snap to edges if close (within 10%)
-      const threshold = 10;
-      if (x < threshold) x = 0;
-      else if (x > 100 - threshold) x = 100;
-      
-      if (y < threshold) y = 0;
-      else if (y > 100 - threshold) y = 100;
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
 
       const newPin: BookmarkPin = {
         id: uuidv4(),
-        page: index,
+        page: currentPage,
         x,
         y,
         color: selectedPinColor
       };
 
-      const updatedBook = {
-        ...book,
-        pins: [...(book.pins || []), newPin]
-      };
-
+      const updatedBook = { ...book, pins: [...(book.pins || []), newPin] };
       setBook(updatedBook);
       saveBook(updatedBook);
-    };
+      setSelectedPinColor(null);
+    } else if (isStickyMode) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
 
-    const handlePointerDown = (e: React.PointerEvent) => {
-      if (isHighlightMode && book) {
-        e.stopPropagation();
-        e.currentTarget.setPointerCapture(e.pointerId);
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.height) * 100;
-        setDrawingHighlight({ page: index, startX: x, startY: y, currentX: x, currentY: y });
-      }
-    };
+      const newSticky: StickyNote = {
+        id: uuidv4(),
+        page: currentPage,
+        x,
+        y,
+        text: '',
+        color: stickyColor
+      };
 
-    const handlePointerMove = (e: React.PointerEvent) => {
-      if (drawingHighlight && drawingHighlight.page === index) {
-        e.stopPropagation();
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-        const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-        setDrawingHighlight(prev => prev ? { ...prev, currentX: x, currentY: y } : null);
-      }
-    };
+      const updatedBook = { ...book, stickyNotes: [...(book.stickyNotes || []), newSticky] };
+      setBook(updatedBook);
+      saveBook(updatedBook);
+      setIsStickyMode(false);
+      setActiveStickyId(newSticky.id);
+    }
+  };
 
-    const handlePointerUp = (e: React.PointerEvent) => {
-      if (drawingHighlight && drawingHighlight.page === index && book) {
-        e.stopPropagation();
-        e.currentTarget.releasePointerCapture(e.pointerId);
-        
-        const width = Math.abs(drawingHighlight.currentX - drawingHighlight.startX);
-        const height = Math.abs(drawingHighlight.currentY - drawingHighlight.startY);
-        
-        if (width > 0.5 && height > 0.5) {
-          const newHighlight: Highlight = {
-            id: uuidv4(),
-            page: index,
-            x: Math.min(drawingHighlight.startX, drawingHighlight.currentX),
-            y: Math.min(drawingHighlight.startY, drawingHighlight.currentY),
-            width,
-            height,
-            color: highlightColor
-          };
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!isHighlightMode) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setDrawingHighlight({ page: currentPage, startX: x, startY: y, currentX: x, currentY: y });
+  };
 
-          const updatedBook = {
-            ...book,
-            highlights: [...(book.highlights || []), newHighlight]
-          };
-          setBook(updatedBook);
-          saveBook(updatedBook);
-        }
-        setDrawingHighlight(null);
-      }
-    };
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!drawingHighlight) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setDrawingHighlight(prev => prev ? { ...prev, currentX: x, currentY: y } : null);
+  };
 
-    const handleTextSelection = (e: React.MouseEvent) => {
-      if (!isHighlightMode || !book) return;
-      
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) return;
+  const handlePointerUp = () => {
+    if (!drawingHighlight || !book) return;
 
+    const x = Math.min(drawingHighlight.startX, drawingHighlight.currentX);
+    const y = Math.min(drawingHighlight.startY, drawingHighlight.currentY);
+    const width = Math.abs(drawingHighlight.startX - drawingHighlight.currentX);
+    const height = Math.abs(drawingHighlight.startY - drawingHighlight.currentY);
+
+    if (width > 1 && height > 1) {
+      const newHighlight: Highlight = {
+        id: uuidv4(),
+        page: currentPage,
+        x,
+        y,
+        width,
+        height,
+        color: highlightColor
+      };
+
+      const updatedBook = { ...book, highlights: [...(book.highlights || []), newHighlight] };
+      setBook(updatedBook);
+      saveBook(updatedBook);
+    }
+
+    setDrawingHighlight(null);
+  };
+
+  const handleTextSelection = () => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
       const range = selection.getRangeAt(0);
-      const rects = range.getClientRects();
-      const containerRect = e.currentTarget.getBoundingClientRect();
+      const rect = range.getBoundingClientRect();
+      setSelectionMenu({
+        x: rect.left + rect.width / 2,
+        y: rect.top,
+        text: selection.toString().trim()
+      });
+    } else {
+      setSelectionMenu(null);
+    }
+  };
 
-      const newHighlights: Highlight[] = [];
+  const removePin = (id: string) => {
+    if (!book) return;
+    const updatedBook = { ...book, pins: (book.pins || []).filter(p => p.id !== id) };
+    setBook(updatedBook);
+    saveBook(updatedBook);
+  };
 
-      for (let i = 0; i < rects.length; i++) {
-        const rect = rects[i];
-        const x = ((rect.left - containerRect.left) / containerRect.width) * 100;
-        const y = ((rect.top - containerRect.top) / containerRect.height) * 100;
-        const width = (rect.width / containerRect.width) * 100;
-        const height = (rect.height / containerRect.height) * 100;
+  const removeHighlight = (id: string) => {
+    if (!book) return;
+    const updatedBook = { ...book, highlights: (book.highlights || []).filter(h => h.id !== id) };
+    setBook(updatedBook);
+    saveBook(updatedBook);
+  };
 
-        if (width > 0.1 && height > 0.1) {
-          newHighlights.push({
-            id: uuidv4(),
-            page: index,
-            x,
-            y,
-            width,
-            height,
-            color: highlightColor
-          });
-        }
-      }
+  const removeStickyNote = (id: string) => {
+    if (!book) return;
+    const updatedBook = { ...book, stickyNotes: (book.stickyNotes || []).filter(s => s.id !== id) };
+    setBook(updatedBook);
+    saveBook(updatedBook);
+  };
 
-      if (newHighlights.length > 0) {
-        const updatedBook = {
-          ...book,
-          highlights: [...(book.highlights || []), ...newHighlights]
-        };
-        setBook(updatedBook);
-        saveBook(updatedBook);
-        selection.removeAllRanges();
-      }
-    };
+  const renderPage = (index: number) => {
+    if (!book) return null;
 
     const pagePins = (book.pins || []).filter(p => p.page === index);
     const pageHighlights = (book.highlights || []).filter(h => h.page === index);
@@ -435,7 +320,7 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
 
     return (
       <div 
-        className={`w-full h-full relative overflow-hidden ${theme === 'dark' ? 'bg-zinc-900' : 'bg-white'} ${selectedPinColor ? 'cursor-crosshair' : ''} ${isHighlightMode ? 'cursor-crosshair touch-none' : ''} ${isStickyMode ? 'cursor-crosshair' : ''}`}
+        className={`w-full h-full relative overflow-hidden ${theme === 'dark' ? 'bg-obsidian' : 'bg-snow'} ${selectedPinColor ? 'cursor-crosshair' : ''} ${isHighlightMode ? 'cursor-crosshair touch-none' : ''} ${isStickyMode ? 'cursor-crosshair' : ''}`}
         onClick={handlePageClick}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -444,18 +329,18 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
       >
         {isTextMode ? (
           <div 
-            className={`w-full h-full p-8 sm:p-12 overflow-y-auto ${theme === 'dark' ? 'bg-zinc-950 text-zinc-300' : 'bg-zinc-50 text-zinc-800'}`}
+            className={`w-full h-full p-8 sm:p-12 overflow-y-auto ${theme === 'dark' ? 'bg-obsidian text-snow/80' : 'bg-snow text-obsidian/80'}`}
             style={{ 
               fontSize: `${fontSize}px`, 
               lineHeight: lineSpacing,
-              fontFamily: 'Georgia, serif'
+              fontFamily: 'Inter, sans-serif'
             }}
           >
             {pageTexts[index] !== undefined ? (
               <div className="whitespace-pre-wrap pb-12">{pageTexts[index]}</div>
             ) : (
               <div className="h-full flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-zinc-300 animate-spin" />
+                <Loader2 className="w-8 h-8 text-green animate-spin" />
               </div>
             )}
           </div>
@@ -484,10 +369,8 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
                       const { transform, width, height, str } = item;
                       const { width: pageWidth, height: pageHeight } = pageTextContent[index].viewport;
                       
-                      // transform is [scaleX, skewY, skewX, scaleY, translateX, translateY]
                       const left = (transform[4] / pageWidth) * 100;
                       const bottom = (transform[5] / pageHeight) * 100;
-                      const fontSize = transform[0]; // Approximate
                       const itemWidth = (width / pageWidth) * 100;
                       const itemHeight = (height / pageHeight) * 100;
 
@@ -498,12 +381,9 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
                           style={{
                             left: `${left}%`,
                             bottom: `${bottom}%`,
-                            fontSize: `${fontSize}px`,
                             width: `${itemWidth}%`,
                             height: `${itemHeight}%`,
-                            transform: `scaleY(-1)`, // PDF coordinates are bottom-up
-                            transformOrigin: 'bottom left',
-                            color: 'transparent',
+                            fontSize: `${transform[0]}px`
                           }}
                         >
                           {str}
@@ -512,221 +392,249 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
                     })}
                   </div>
                 )}
+
+                {/* Highlights */}
+                {pageHighlights.map(h => (
+                  <div
+                    key={h.id}
+                    className="absolute z-10 mix-blend-multiply opacity-50 group/highlight"
+                    style={{
+                      left: `${h.x}%`,
+                      top: `${h.y}%`,
+                      width: `${h.width}%`,
+                      height: `${h.height}%`,
+                      backgroundColor: h.color
+                    }}
+                  >
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); removeHighlight(h.id); }}
+                      className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/highlight:opacity-100 transition-opacity"
+                    >
+                      <X className="w-2 h-2" />
+                    </button>
+                  </div>
+                ))}
+
+                {/* Drawing Highlight */}
+                {drawingHighlight && drawingHighlight.page === index && (
+                  <div
+                    className="absolute z-20 mix-blend-multiply opacity-30"
+                    style={{
+                      left: `${Math.min(drawingHighlight.startX, drawingHighlight.currentX)}%`,
+                      top: `${Math.min(drawingHighlight.startY, drawingHighlight.currentY)}%`,
+                      width: `${Math.abs(drawingHighlight.startX - drawingHighlight.currentX)}%`,
+                      height: `${Math.abs(drawingHighlight.startY - drawingHighlight.currentY)}%`,
+                      backgroundColor: highlightColor
+                    }}
+                  />
+                )}
+
+                {/* Pins */}
+                {pagePins.map(p => (
+                  <motion.div
+                    key={p.id}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute z-40 group/pin"
+                    style={{ left: `${p.x}%`, top: `${p.y}%` }}
+                  >
+                    <div 
+                      className="w-5 h-5 rounded-full shadow-lg border-2 border-white flex items-center justify-center transform -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform rotate-15"
+                      style={{ backgroundColor: p.color }}
+                    />
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); removePin(p.id); }}
+                      className="absolute -top-6 left-1/2 -translate-x-1/2 bg-obsidian text-snow text-[8px] px-2 py-1 rounded-none opacity-0 group-hover/pin:opacity-100 transition-opacity whitespace-nowrap uppercase tracking-widest font-bold"
+                    >
+                      Remove
+                    </button>
+                  </motion.div>
+                ))}
+
+                {/* Sticky Notes */}
+                {pageStickyNotes.map(s => (
+                  <div
+                    key={s.id}
+                    className="absolute z-40"
+                    style={{ left: `${s.x}%`, top: `${s.y}%` }}
+                  >
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setActiveStickyId(activeStickyId === s.id ? null : s.id); }}
+                      className="w-6 h-6 flex items-center justify-center transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-transform relative group"
+                      style={{ color: s.color }}
+                    >
+                      <StickyNoteIcon className="w-6 h-6 fill-current" />
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); removeStickyNote(s.id); }}
+                        className="absolute -top-4 -right-4 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-2 h-2" />
+                      </button>
+                    </button>
+
+                    <AnimatePresence>
+                      {activeStickyId === s.id && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                          className="absolute top-full left-0 mt-2 w-64 p-4 rounded-none shadow-2xl border border-white/10 backdrop-blur-md"
+                          style={{ backgroundColor: `${s.color}dd` }}
+                        >
+                          <textarea
+                            autoFocus
+                            className="w-full h-32 bg-transparent border-none resize-none focus:outline-none text-obsidian placeholder:text-obsidian/50 text-xs font-medium"
+                            placeholder="TYPE YOUR NOTE..."
+                            value={s.text}
+                            onChange={(e) => {
+                              const updatedNotes = book.stickyNotes!.map(sn => 
+                                sn.id === s.id ? { ...sn, text: e.target.value } : sn
+                              );
+                              const updatedBook = { ...book, stickyNotes: updatedNotes };
+                              setBook(updatedBook);
+                              saveBook(updatedBook);
+                            }}
+                          />
+                          <div className="flex justify-end mt-2">
+                            <button
+                              onClick={() => {
+                                const query = `Explain this note: ${s.text}`;
+                                setAiQuery(query);
+                                setAiPanelOpen(true);
+                                handleAskAi(query);
+                              }}
+                              className="text-[10px] font-bold uppercase tracking-widest bg-obsidian/20 hover:bg-obsidian/30 text-obsidian px-3 py-1.5 rounded-none flex items-center gap-1.5 transition-colors"
+                            >
+                              <Sparkles className="w-3 h-3" /> Explain
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ))}
               </div>
             ) : (
-              <Loader2 className="w-8 h-8 text-zinc-300 animate-spin" />
+              <div className="flex flex-col items-center gap-4">
+                <Loader2 className="w-12 h-12 text-green animate-spin" />
+                <p className="text-silver uppercase tracking-widest text-xs font-bold">Rendering Page...</p>
+              </div>
             )}
           </div>
         )}
-
-        <div className={`absolute bottom-4 left-0 right-0 flex items-center justify-between px-10 text-[10px] font-mono pointer-events-none ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-400'}`}>
-          <span className="truncate max-w-[150px] opacity-40 uppercase tracking-[0.2em]">{book.title}</span>
-          <span className="opacity-60">{index + 1}</span>
-        </div>
-
-        {/* Render Highlights */}
-        {pageHighlights.map(highlight => (
-          <div
-            key={highlight.id}
-            className="absolute mix-blend-multiply group z-40"
-            style={{ 
-              left: `${highlight.x}%`, 
-              top: `${highlight.y}%`, 
-              width: `${highlight.width}%`, 
-              height: `${highlight.height}%`, 
-              backgroundColor: highlight.color,
-              opacity: 0.4,
-              borderRadius: '2px',
-              boxShadow: `0 0 5px ${highlight.color}40`,
-              transform: 'rotate(-0.2deg)' // Slight rotation for organic feel
-            }}
-          >
-            <button
-              className="absolute -top-6 right-0 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => {
-                e.stopPropagation();
-                const updatedBook = { ...book, highlights: book.highlights!.filter(h => h.id !== highlight.id) };
-                setBook(updatedBook);
-                saveBook(updatedBook);
-              }}
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        ))}
-
-        {/* Render Drawing Highlight */}
-        {drawingHighlight && drawingHighlight.page === index && (
-          <div
-            className="absolute mix-blend-multiply pointer-events-none z-40"
-            style={{ 
-              left: `${Math.min(drawingHighlight.startX, drawingHighlight.currentX)}%`, 
-              top: `${Math.min(drawingHighlight.startY, drawingHighlight.currentY)}%`, 
-              width: `${Math.abs(drawingHighlight.currentX - drawingHighlight.startX)}%`, 
-              height: `${Math.abs(drawingHighlight.currentY - drawingHighlight.startY)}%`, 
-              backgroundColor: highlightColor,
-              opacity: 0.4
-            }}
-          />
-        )}
-
-        {/* Render Pins */}
-        {pagePins.map(pin => {
-          const isAtLeft = pin.x === 0;
-          const isAtRight = pin.x === 100;
-          const isAtTop = pin.y === 0;
-          const isAtBottom = pin.y === 100;
-          const isOnEdge = isAtLeft || isAtRight || isAtTop || isAtBottom;
-
-          return (
-            <div
-              key={pin.id}
-              className={cn(
-                "absolute z-50 cursor-pointer hover:scale-110 transition-transform group",
-                !isOnEdge && "hover:rotate-12"
-              )}
-              style={{ 
-                left: `${pin.x}%`, 
-                top: `${pin.y}%`, 
-                transform: isAtLeft ? 'translate(-30%, -50%) rotate(-90deg)' :
-                           isAtRight ? 'translate(-70%, -50%) rotate(90deg)' :
-                           isAtTop ? 'translate(-50%, -30%) rotate(0deg)' :
-                           isAtBottom ? 'translate(-50%, -70%) rotate(180deg)' :
-                           'translate(-50%, -50%) rotate(15deg)'
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                const updatedBook = { ...book, pins: book.pins!.filter(p => p.id !== pin.id) };
-                setBook(updatedBook);
-                saveBook(updatedBook);
-              }}
-            >
-              <div className="relative">
-                <Paperclip 
-                  className={cn(
-                    "w-8 h-8 drop-shadow-lg",
-                    isOnEdge ? "opacity-100" : "opacity-90"
-                  )} 
-                  style={{ color: pin.color }} 
-                />
-                {/* Physical paperclip detail */}
-                <div 
-                  className="absolute inset-0 border-2 border-white/20 rounded-full pointer-events-none" 
-                  style={{ opacity: 0.3 }}
-                />
-              </div>
-              <div className={cn(
-                "absolute bg-red-500 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[60]",
-                isAtTop ? "top-full mt-2 left-1/2 -translate-x-1/2" :
-                isAtBottom ? "bottom-full mb-2 left-1/2 -translate-x-1/2" :
-                isAtLeft ? "left-full ml-2 top-1/2 -translate-y-1/2" :
-                "right-full mr-2 top-1/2 -translate-y-1/2"
-              )}>
-                Remove Pin
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Render Sticky Notes */}
-        {pageStickyNotes.map(sticky => (
-          <div
-            key={sticky.id}
-            className="absolute z-50 group"
-            style={{ left: `${sticky.x}%`, top: `${sticky.y}%` }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div 
-              className="relative cursor-pointer hover:scale-110 transition-transform"
-              onClick={() => setActiveStickyId(activeStickyId === sticky.id ? null : sticky.id)}
-            >
-              <StickyNoteIcon className="w-8 h-8 drop-shadow-md" style={{ color: sticky.color, fill: sticky.color }} />
-              <button
-                className="absolute -top-2 -right-2 bg-red-500 text-white p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const updatedBook = { ...book, stickyNotes: book.stickyNotes!.filter(s => s.id !== sticky.id) };
-                  setBook(updatedBook);
-                  saveBook(updatedBook);
-                  if (activeStickyId === sticky.id) setActiveStickyId(null);
-                }}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-            
-            <AnimatePresence>
-              {activeStickyId === sticky.id && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                  className="absolute top-full left-0 mt-2 w-64 p-3 rounded-lg shadow-xl border border-zinc-200/20 backdrop-blur-md"
-                  style={{ backgroundColor: `${sticky.color}dd` }}
-                >
-                  <textarea
-                    autoFocus
-                    className="w-full h-32 bg-transparent border-none resize-none focus:outline-none text-zinc-900 placeholder:text-zinc-900/50"
-                    placeholder="Type your note here..."
-                    value={sticky.text}
-                    onChange={(e) => {
-                      const updatedNotes = book.stickyNotes!.map(s => 
-                        s.id === sticky.id ? { ...s, text: e.target.value } : s
-                      );
-                      const updatedBook = { ...book, stickyNotes: updatedNotes };
-                      setBook(updatedBook);
-                      saveBook(updatedBook);
-                    }}
-                  />
-                  <div className="flex justify-end mt-2">
-                    <button
-                      onClick={() => {
-                        const query = `Explain this note: ${sticky.text}`;
-                        setAiQuery(query);
-                        setAiPanelOpen(true);
-                        handleAskAi(query);
-                      }}
-                      className="text-xs bg-white/30 hover:bg-white/50 text-zinc-900 px-2 py-1 rounded flex items-center gap-1 transition-colors"
-                    >
-                      <Sparkles className="w-3 h-3" /> Explain
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        ))}
       </div>
     );
   };
 
+  if (!book) return null;
+
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className={`min-h-screen flex flex-col transition-colors duration-700 ${theme === 'dark' ? 'bg-zinc-950 text-zinc-200' : 'bg-zinc-50 text-zinc-900'}`}
-    >
-      {/* Toolbar */}
+    <div className={`w-full h-full flex flex-col ${theme === 'dark' ? 'bg-obsidian text-snow' : 'bg-snow text-obsidian'} transition-colors duration-500`}>
+      {/* Immersive Toolbar */}
       <AnimatePresence>
         {showToolbar && (
           <motion.header 
             initial={{ y: -100 }}
             animate={{ y: 0 }}
             exit={{ y: -100 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className={`h-16 px-6 flex items-center justify-between border-b ${theme === 'dark' ? 'border-white/5 bg-black/40' : 'border-black/5 bg-white/40'} backdrop-blur-xl fixed top-0 left-0 right-0 z-50`}
+            className="fixed top-0 left-0 w-full z-50 px-6 py-4 flex justify-between items-center bg-obsidian/80 backdrop-blur-xl border-b border-white/5"
           >
-            <div className="flex items-center gap-4">
-              <button onClick={onBack} className={`p-2.5 rounded-full transition-all active:scale-95 ${theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>
+            <div className="flex items-center gap-6">
+              <button 
+                onClick={onBack}
+                className="p-2 hover:bg-white/10 rounded-none transition-colors"
+              >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="font-medium truncate max-w-xs text-sm tracking-wide">{book.title}</h1>
+              <div className="flex flex-col">
+                <h2 className="text-xs font-bold uppercase tracking-widest truncate max-w-[200px]">{book.title}</h2>
+                <span className="text-[10px] text-silver uppercase tracking-widest font-bold">Page {currentPage + 1} of {book.totalPages}</span>
+              </div>
             </div>
-            
-            <div className="flex items-center gap-1.5">
+
+            <div className="flex items-center gap-2 bg-white/5 p-1 rounded-none border border-white/5">
+              <button 
+                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+                className="p-2 hover:bg-white/10 rounded-none transition-colors"
+                title="Toggle Theme"
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              </button>
+              <div className="w-px h-4 bg-white/10 mx-1" />
+              <button 
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
+                className="p-2 hover:bg-white/10 rounded-none transition-colors"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => setZoom(Math.min(3, zoom + 0.1))}
+                className="p-2 hover:bg-white/10 rounded-none transition-colors"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <div className="w-px h-4 bg-white/10 mx-1" />
+              <button 
+                onClick={toggleFullscreen}
+                className="p-2 hover:bg-white/10 rounded-none transition-colors"
+                title="Toggle Fullscreen"
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+              <div className="w-px h-4 bg-white/10 mx-1" />
+              <button 
+                onClick={() => setAiPanelOpen(!aiPanelOpen)}
+                className={cn(
+                  "p-2 rounded-none transition-all flex items-center gap-2",
+                  aiPanelOpen ? "bg-green text-obsidian shadow-lg" : "hover:bg-white/10"
+                )}
+                title="AI Assistant"
+              >
+                <Sparkles className="w-4 h-4" />
+              </button>
+              <div className="w-px h-4 bg-white/10 mx-1" />
+              <button 
+                onClick={() => setIsHighlightMode(!isHighlightMode)}
+                className={cn(
+                  "p-2 rounded-none transition-all",
+                  isHighlightMode ? "bg-green text-obsidian shadow-lg" : "hover:bg-white/10"
+                )}
+                title="Highlighter"
+              >
+                <Highlighter className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => setIsStickyMode(!isStickyMode)}
+                className={cn(
+                  "p-2 rounded-none transition-all",
+                  isStickyMode ? "bg-green text-obsidian shadow-lg" : "hover:bg-white/10"
+                )}
+                title="Sticky Note"
+              >
+                <StickyNoteIcon className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => setIsTrayOpen(!isTrayOpen)}
+                className={cn(
+                  "p-2 rounded-none transition-all",
+                  isTrayOpen ? "bg-green text-obsidian shadow-lg" : "hover:bg-white/10"
+                )}
+                title="Bookmark Pins"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+              <div className="w-px h-4 bg-white/10 mx-1" />
               <div className="relative">
-                <button onClick={() => setShowSettings(!showSettings)} className={`p-2.5 rounded-full transition-all active:scale-95 ${showSettings ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>
+                <button 
+                  onClick={() => setShowSettings(!showSettings)}
+                  className={cn(
+                    "p-2 rounded-none transition-all",
+                    showSettings ? "bg-green text-obsidian shadow-lg" : "hover:bg-white/10"
+                  )}
+                  title="Reader Settings"
+                >
                   <Settings2 className="w-4 h-4" />
                 </button>
                 
@@ -736,22 +644,20 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className={`absolute top-full right-0 mt-4 w-72 p-5 rounded-2xl shadow-2xl border ${theme === 'dark' ? 'bg-zinc-900 border-white/10' : 'bg-white border-black/5'} backdrop-blur-xl z-50 flex flex-col gap-6`}
+                      className={`absolute top-full right-0 mt-4 w-72 p-6 rounded-none shadow-2xl border ${theme === 'dark' ? 'bg-obsidian border-white/10' : 'bg-snow border-black/5'} backdrop-blur-xl z-50 flex flex-col gap-6`}
                     >
-                      {/* Text Mode Toggle */}
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Reader Mode</span>
+                        <span className="text-xs font-bold uppercase tracking-widest">Reader Mode</span>
                         <button 
                           onClick={() => setIsTextMode(!isTextMode)}
-                          className={`w-12 h-6 rounded-full transition-colors relative ${isTextMode ? 'bg-emerald-500' : 'bg-zinc-500/30'}`}
+                          className={`w-12 h-6 rounded-none transition-colors relative ${isTextMode ? 'bg-green' : 'bg-silver/30'}`}
                         >
-                          <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-all ${isTextMode ? 'left-7' : 'left-1'}`} />
+                          <div className={`w-4 h-4 bg-obsidian absolute top-1 transition-all ${isTextMode ? 'left-7' : 'left-1'}`} />
                         </button>
                       </div>
 
-                      {/* Brightness Slider */}
                       <div className="space-y-3">
-                        <div className="flex items-center justify-between text-xs text-zinc-500">
+                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-silver">
                           <span className="flex items-center gap-1.5"><Sun className="w-3.5 h-3.5" /> Brightness</span>
                           <span>{brightness}%</span>
                         </div>
@@ -760,13 +666,12 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
                           min="50" max="150" 
                           value={brightness} 
                           onChange={e => setBrightness(Number(e.target.value))}
-                          className="w-full accent-emerald-500"
+                          className="w-full accent-green h-1 bg-silver/20 appearance-none cursor-pointer"
                         />
                       </div>
 
-                      {/* Font Size Slider */}
                       <div className={`space-y-3 transition-opacity ${!isTextMode ? 'opacity-40 pointer-events-none' : ''}`}>
-                        <div className="flex items-center justify-between text-xs text-zinc-500">
+                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-silver">
                           <span className="flex items-center gap-1.5"><Type className="w-3.5 h-3.5" /> Font Size</span>
                           <span>{fontSize}px</span>
                         </div>
@@ -775,13 +680,12 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
                           min="12" max="32" 
                           value={fontSize} 
                           onChange={e => setFontSize(Number(e.target.value))}
-                          className="w-full accent-emerald-500"
+                          className="w-full accent-green h-1 bg-silver/20 appearance-none cursor-pointer"
                         />
                       </div>
 
-                      {/* Line Spacing Slider */}
                       <div className={`space-y-3 transition-opacity ${!isTextMode ? 'opacity-40 pointer-events-none' : ''}`}>
-                        <div className="flex items-center justify-between text-xs text-zinc-500">
+                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-silver">
                           <span className="flex items-center gap-1.5"><AlignLeft className="w-3.5 h-3.5" /> Line Spacing</span>
                           <span>{lineSpacing}x</span>
                         </div>
@@ -790,521 +694,418 @@ export const Reader = ({ bookId, onBack }: { bookId: string; onBack: () => void 
                           min="1" max="2.5" step="0.1"
                           value={lineSpacing} 
                           onChange={e => setLineSpacing(Number(e.target.value))}
-                          className="w-full accent-emerald-500"
+                          className="w-full accent-green h-1 bg-silver/20 appearance-none cursor-pointer"
                         />
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
-
-              <div className={`w-px h-4 mx-2 ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'}`} />
-
-              <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} disabled={isTextMode} className={`p-2.5 rounded-full transition-all active:scale-95 disabled:opacity-30 ${theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>
-                <ZoomOut className="w-4 h-4" />
-              </button>
-              <span className={`text-xs font-mono w-12 text-center opacity-70 ${isTextMode ? 'opacity-30' : ''}`}>{Math.round(zoom * 100)}%</span>
-              <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} disabled={isTextMode} className={`p-2.5 rounded-full transition-all active:scale-95 disabled:opacity-30 ${theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>
-                <ZoomIn className="w-4 h-4" />
-              </button>
-              <div className={`w-px h-4 mx-2 ${theme === 'dark' ? 'bg-white/10' : 'bg-black/10'}`} />
-              <button onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} className={`p-2.5 rounded-full transition-all active:scale-95 ${theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>
-                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-              </button>
-              <button onClick={toggleFullscreen} className={`p-2.5 rounded-full transition-all active:scale-95 ${theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              </button>
-              <button onClick={() => setAiPanelOpen(!aiPanelOpen)} className={`p-2.5 rounded-full transition-all active:scale-95 ml-2 ${aiPanelOpen ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>
-                <MessageSquare className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => {
-                  setIsHighlightMode(!isHighlightMode);
-                  if (!isHighlightMode) {
-                    setSelectedPinColor(null);
-                    setIsTrayOpen(false);
-                    setIsStickyMode(false);
-                  }
-                }} 
-                className={`p-2.5 rounded-full transition-all active:scale-95 ${isHighlightMode ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
-              >
-                <Highlighter className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => {
-                  setIsStickyMode(!isStickyMode);
-                  if (!isStickyMode) {
-                    setSelectedPinColor(null);
-                    setIsTrayOpen(false);
-                    setIsHighlightMode(false);
-                  }
-                }} 
-                className={`p-2.5 rounded-full transition-all active:scale-95 ${isStickyMode ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
-              >
-                <StickyNoteIcon className="w-4 h-4" />
-              </button>
-
-              {/* Color Selection for Active Tool */}
-              {(isStickyMode || isHighlightMode) && (
-                <motion.div 
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="flex items-center gap-1.5 ml-2 px-2 py-1 bg-black/5 rounded-full border border-black/5"
-                >
-                  {PIN_COLORS.map(color => (
-                    <button
-                      key={color}
-                      onClick={() => isStickyMode ? setStickyColor(color) : setHighlightColor(color)}
-                      className={cn(
-                        "w-4 h-4 rounded-full border border-white/20 transition-transform hover:scale-125",
-                        (isStickyMode ? stickyColor === color : highlightColor === color) && "ring-2 ring-emerald-500 ring-offset-2 ring-offset-zinc-900"
-                      )}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </motion.div>
-              )}
-
-              <button 
-                onClick={() => {
-                  setIsTrayOpen(!isTrayOpen);
-                  if (!isTrayOpen) {
-                    setIsHighlightMode(false);
-                    setIsStickyMode(false);
-                  }
-                  if (isTrayOpen) setSelectedPinColor(null);
-                }} 
-                className={`p-2.5 rounded-full transition-all active:scale-95 ${isTrayOpen || selectedPinColor ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
             </div>
           </motion.header>
         )}
       </AnimatePresence>
 
-      {/* Floating Pin Cursor */}
-      {selectedPinColor && (
-        <motion.div
-          className="fixed pointer-events-none z-[100] drop-shadow-2xl"
-          style={{ left: 0, top: 0, transform: pinTransform }}
-        >
-          <Paperclip className="w-8 h-8" style={{ color: selectedPinColor }} />
-          <div className="absolute top-8 left-8 bg-black/70 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap">
-            Click to place • Esc to cancel
-          </div>
-        </motion.div>
-      )}
-
-      {/* Floating Sticky Note Cursor */}
-      {isStickyMode && (
-        <motion.div
-          className="fixed pointer-events-none z-[100] drop-shadow-2xl"
-          style={{ left: 0, top: 0, transform: stickyTransform }}
-        >
-          <StickyNoteIcon className="w-8 h-8" style={{ color: stickyColor, fill: stickyColor }} />
-          <div className="absolute top-8 left-8 bg-black/70 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap">
-            Click to place • Esc to cancel
-          </div>
-        </motion.div>
-      )}
-
-      {/* Floating Highlighter Cursor */}
-      {isHighlightMode && (
-        <motion.div
-          className="fixed pointer-events-none z-[100]"
-          style={{ left: 0, top: 0, transform: highlightTransform }}
-        >
-          {/* 3D Pen Body */}
-          <div className="relative w-6 h-32">
-            {/* Pen Tip */}
-            <div 
-              className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-6 clip-path-tip"
-              style={{ backgroundColor: highlightColor, clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }}
-            />
-            {/* Pen Grip */}
-            <div className="absolute bottom-6 left-0 w-full h-8 bg-zinc-800 rounded-sm shadow-lg" />
-            {/* Pen Body */}
-            <div className="absolute bottom-14 left-0 w-full h-16 bg-zinc-700 rounded-t-full shadow-xl" />
-            {/* Pen Cap/Top */}
-            <div className="absolute bottom-30 left-1/2 -translate-x-1/2 w-4 h-2 bg-zinc-600 rounded-full" />
-            
-            {/* Glow effect */}
-            <div 
-              className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full blur-xl opacity-50"
-              style={{ backgroundColor: highlightColor }}
-            />
-          </div>
-          <div className="absolute top-8 left-8 bg-black/70 text-white text-[10px] px-2 py-1 rounded-full whitespace-nowrap">
-            Select text to highlight • Esc to cancel
-          </div>
-        </motion.div>
-      )}
+      {/* Floating Cursors */}
+      <AnimatePresence>
+        {selectedPinColor && (
+          <motion.div 
+            style={{ x: mouseX, y: mouseY, transform: pinTransform }}
+            className="fixed top-0 left-0 pointer-events-none z-[100] flex flex-col items-center gap-2"
+          >
+            <div className="w-5 h-5 rounded-full border-2 border-white shadow-xl" style={{ backgroundColor: selectedPinColor }} />
+            <span className="bg-obsidian text-snow text-[8px] px-2 py-1 rounded-none uppercase tracking-widest font-bold border border-white/10">Place Pin</span>
+          </motion.div>
+        )}
+        {isStickyMode && (
+          <motion.div 
+            style={{ x: mouseX, y: mouseY, transform: stickyTransform }}
+            className="fixed top-0 left-0 pointer-events-none z-[100] flex flex-col items-center gap-2"
+          >
+            <StickyNoteIcon className="w-6 h-6 shadow-xl" style={{ color: stickyColor }} />
+            <span className="bg-obsidian text-snow text-[8px] px-2 py-1 rounded-none uppercase tracking-widest font-bold border border-white/10">Place Note</span>
+          </motion.div>
+        )}
+        {isHighlightMode && (
+          <motion.div 
+            style={{ x: mouseX, y: mouseY, transform: highlightTransform }}
+            className="fixed top-0 left-0 pointer-events-none z-[100] flex flex-col items-center gap-2"
+          >
+            <Highlighter className="w-6 h-6 shadow-xl" style={{ color: highlightColor }} />
+            <span className="bg-obsidian text-snow text-[8px] px-2 py-1 rounded-none uppercase tracking-widest font-bold border border-white/10">Highlight Mode</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Bookmark Tray */}
       <AnimatePresence>
         {isTrayOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.9 }}
-            className="absolute top-20 right-8 z-50 flex flex-col items-center gap-4"
+            initial={{ y: 200, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 200, opacity: 0 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-6"
           >
-            <div
-              className="relative w-64 h-64 rounded-full bg-white/60 backdrop-blur-2xl border border-white/50 shadow-2xl overflow-hidden shadow-black/20"
-              onWheel={(e) => setTrayRotation(r => r + (e.deltaY > 0 ? 60 : -60))}
-            >
-              {/* Center Label */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-white rounded-full z-20 shadow-inner flex items-center justify-center text-center p-2 border border-zinc-100">
-                <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest leading-tight">Stationery<br/>Set</span>
-              </div>
-
-              {/* Rotating Container */}
-              <motion.div
-                className="w-full h-full rounded-full relative"
-                animate={{ rotate: trayRotation }}
-                transition={{ type: "spring", stiffness: 50, damping: 20 }}
+            <div className="bg-obsidian/90 backdrop-blur-2xl p-8 rounded-none border border-white/10 shadow-2xl flex items-center gap-8">
+              <button 
+                onClick={() => setTrayRotation(r => r - 45)}
+                className="p-3 bg-white/5 hover:bg-green hover:text-obsidian transition-all rounded-none"
               >
+                <RotateCcw className="w-5 h-5" />
+              </button>
+              
+              <div className="relative w-48 h-48 flex items-center justify-center">
+                <motion.div 
+                  animate={{ rotate: trayRotation }}
+                  transition={{ type: "spring", stiffness: 100 }}
+                  className="absolute inset-0 border-2 border-dashed border-white/10 rounded-full"
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-silver block mb-1">Select</span>
+                    <span className="text-lg font-display text-green uppercase tracking-tighter">Stationery</span>
+                  </div>
+                </div>
                 {PIN_COLORS.map((color, i) => {
-                  const angle = i * 60;
+                  const angle = (i * (360 / PIN_COLORS.length)) + trayRotation;
+                  const radius = 80;
+                  const x = Math.cos((angle - 90) * (Math.PI / 180)) * radius;
+                  const y = Math.sin((angle - 90) * (Math.PI / 180)) * radius;
+
                   return (
-                    <div
+                    <motion.button
                       key={color}
-                      className="absolute top-1/2 left-1/2 w-32 h-32 origin-top-left"
-                      style={{
-                        transform: `rotate(${angle}deg)`,
+                      onClick={() => { setSelectedPinColor(color); setIsTrayOpen(false); }}
+                      className={cn(
+                        "absolute w-10 h-10 rounded-full border-2 border-white shadow-xl transition-all hover:scale-125 z-10",
+                        selectedPinColor === color ? "ring-4 ring-green" : ""
+                      )}
+                      style={{ 
+                        backgroundColor: color,
+                        left: `calc(50% + ${x}px - 20px)`,
+                        top: `calc(50% + ${y}px - 20px)`
                       }}
-                    >
-                      {/* Divider */}
-                      <div className="absolute top-0 left-0 w-full h-px bg-black/5" />
-                      {/* Pins */}
-                      <div
-                        className="absolute top-8 left-8 w-16 h-16 cursor-pointer hover:scale-110 transition-transform flex items-center justify-center"
-                        style={{ transform: `rotate(-${angle + trayRotation}deg)` }}
-                        onClick={() => setSelectedPinColor(color)}
-                      >
-                        <Paperclip className="absolute w-6 h-6 drop-shadow-md -translate-x-2 -translate-y-2 rotate-12" style={{ color }} />
-                        <Paperclip className="absolute w-6 h-6 drop-shadow-md translate-x-2 -translate-y-1 -rotate-45" style={{ color }} />
-                        <Paperclip className="absolute w-6 h-6 drop-shadow-md translate-y-2 rotate-90" style={{ color }} />
-                      </div>
-                    </div>
+                      whileHover={{ scale: 1.2 }}
+                    />
                   );
                 })}
-              </motion.div>
-            </div>
+              </div>
 
-            {/* Controls */}
-            <div className="flex items-center gap-4 bg-white/80 backdrop-blur-md px-4 py-2 rounded-full shadow-lg border border-white/50">
-              <button onClick={() => setTrayRotation(r => r - 60)} className="p-2 hover:bg-black/5 rounded-full text-zinc-600"><RotateCcw className="w-4 h-4" /></button>
-              <span className="text-xs font-medium text-zinc-500 select-none">Scroll to rotate</span>
-              <button onClick={() => setTrayRotation(r => r + 60)} className="p-2 hover:bg-black/5 rounded-full text-zinc-600"><RotateCw className="w-4 h-4" /></button>
+              <button 
+                onClick={() => setTrayRotation(r => r + 45)}
+                className="p-3 bg-white/5 hover:bg-green hover:text-obsidian transition-all rounded-none"
+              >
+                <RotateCw className="w-5 h-5" />
+              </button>
             </div>
+            <button 
+              onClick={() => setIsTrayOpen(false)}
+              className="bg-obsidian text-snow px-6 py-2 rounded-none text-[10px] font-bold uppercase tracking-widest border border-white/10 hover:bg-red-500 transition-colors"
+            >
+              Close Tray
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Main Content */}
+      {/* Main Content Area */}
       <main 
-        className="flex-1 flex overflow-hidden relative w-full h-full"
-        style={{ filter: `brightness(${brightness}%)`, transition: 'filter 0.3s ease' }}
+        className="flex-1 relative overflow-hidden flex items-center justify-center"
+        style={{ filter: `brightness(${brightness}%)` }}
       >
-        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 overflow-hidden relative">
+        <div className="w-full h-full max-w-5xl mx-auto py-20 px-4">
           <BookFlip 
             totalPages={book.totalPages}
             currentPage={currentPage}
             onPageChange={handlePageChange}
             renderPage={renderPage}
-            aspectRatio={pdfAspectRatio}
-            isPlacingPin={!!selectedPinColor}
           />
-          
-          {/* Progress Bar - Immersive */}
-          <AnimatePresence>
-            {showToolbar && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-md flex items-center gap-4 px-6 py-3 rounded-full backdrop-blur-xl bg-black/20 border border-white/10 shadow-2xl"
-              >
-                <span className="text-xs font-mono text-white/70 w-8 text-right">{Math.max(1, currentPage)}</span>
-                <div 
-                  className="flex-1 h-3 bg-white/20 rounded-full overflow-hidden cursor-pointer relative group"
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const percentage = x / rect.width;
-                    const targetPage = Math.max(1, Math.min(book.totalPages, Math.ceil(percentage * book.totalPages)));
-                    handlePageChange(targetPage);
-                  }}
-                >
-                  <div 
-                    className="absolute top-0 left-0 h-full bg-emerald-500 transition-all duration-300 ease-out"
-                    style={{ width: `${(Math.max(1, currentPage) / book.totalPages) * 100}%` }}
-                  />
-                  <div className="absolute top-0 left-0 w-full h-full bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-                <span className="text-xs font-mono text-white/70 w-8">{book.totalPages}</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
-        {/* AI Sidebar */}
+        {/* Selection Menu */}
         <AnimatePresence>
-          {aiPanelOpen && (
-            <motion.div 
-              initial={{ x: 320, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 320, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className={`w-80 border-l flex flex-col z-40 ${theme === 'dark' ? 'border-white/10 bg-zinc-950/95' : 'border-black/5 bg-white/95'} backdrop-blur-2xl shadow-2xl absolute right-0 top-0 bottom-0 pt-16`}
+          {selectionMenu && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.9 }}
+              animate={{ opacity: 1, y: -10, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.9 }}
+              className="fixed z-[100] bg-obsidian text-snow p-1 rounded-none shadow-2xl border border-white/10 flex items-center gap-1"
+              style={{ left: selectionMenu.x, top: selectionMenu.y, transform: 'translateX(-50%)' }}
             >
-              <div className={`p-5 border-b ${theme === 'dark' ? 'border-white/5' : 'border-black/5'} flex items-center gap-4`}>
-                <button 
-                  onClick={() => setSidebarTab('ai')}
-                  className={cn(
-                    "pb-2 text-xs font-medium transition-all relative",
-                    sidebarTab === 'ai' ? "text-emerald-500" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  Flipverse AI
-                  {sidebarTab === 'ai' && <motion.div layoutId="sidebarTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-500" />}
-                </button>
-                <button 
-                  onClick={() => setSidebarTab('highlights')}
-                  className={cn(
-                    "pb-2 text-xs font-medium transition-all relative",
-                    sidebarTab === 'highlights' ? "text-emerald-500" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  Highlights
-                  {sidebarTab === 'highlights' && <motion.div layoutId="sidebarTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-500" />}
-                </button>
-                <button 
-                  onClick={() => setSidebarTab('bookmarks')}
-                  className={cn(
-                    "pb-2 text-xs font-medium transition-all relative",
-                    sidebarTab === 'bookmarks' ? "text-emerald-500" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  Bookmarks
-                  {sidebarTab === 'bookmarks' && <motion.div layoutId="sidebarTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-500" />}
-                </button>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto">
-                {sidebarTab === 'ai' ? (
-                  <div className="p-5">
-                    {aiResponse ? (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={`p-4 rounded-2xl text-sm leading-relaxed ${theme === 'dark' ? 'bg-white/5 text-zinc-300' : 'bg-black/5 text-zinc-700'}`}
-                      >
-                        {aiResponse}
-                      </motion.div>
-                    ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-center text-sm text-zinc-500 px-4 gap-4 mt-20">
-                        <p>Ask me to summarize the page, explain a concept, or translate text.</p>
-                        <button
-                          onClick={() => {
-                            const query = "Please explain the contents of this page in simple terms.";
-                            setAiQuery(query);
-                            handleAskAi(query);
-                          }}
-                          className="px-4 py-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-full transition-colors flex items-center gap-2"
-                        >
-                          <Sparkles className="w-4 h-4" />
-                          Explain Current Page
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : sidebarTab === 'highlights' ? (
-                  <div className="p-5 flex flex-col gap-3">
-                    {book.highlights && book.highlights.length > 0 ? (
-                      book.highlights.sort((a, b) => a.page - b.page).map(highlight => (
-                        <div
-                          key={highlight.id}
-                          className={cn(
-                            "flex flex-col gap-2 p-3 rounded-xl transition-all text-left group relative",
-                            theme === 'dark' ? "bg-white/5 hover:bg-white/10" : "bg-black/5 hover:bg-black/10"
-                          )}
-                        >
-                          <div className="flex items-center justify-between">
-                            <button 
-                              onClick={() => handlePageChange(highlight.page)}
-                              className="flex items-center gap-2"
-                            >
-                              <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: highlight.color }} />
-                              <span className="text-xs font-medium">Page {highlight.page + 1}</span>
-                            </button>
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => {
-                                  const query = `Explain the context of this highlighted section on page ${highlight.page + 1}.`;
-                                  setAiQuery(query);
-                                  setAiPanelOpen(true);
-                                  setSidebarTab('ai');
-                                  handleAskAi(query);
-                                }}
-                                className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-emerald-500/10 hover:text-emerald-500 rounded-md transition-all"
-                                title="Explain with AI"
-                              >
-                                <Sparkles className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const updatedBook = { ...book, highlights: book.highlights!.filter(h => h.id !== highlight.id) };
-                                  setBook(updatedBook);
-                                  saveBook(updatedBook);
-                                }}
-                                className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 rounded-md transition-all"
-                                title="Remove Highlight"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                          <div className="text-[10px] text-zinc-500 italic">
-                            Highlight section
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-center text-sm text-zinc-500 px-4 gap-4 mt-20">
-                        <Highlighter className="w-8 h-8 opacity-20" />
-                        <p>No highlights yet. Use the highlighter tool to mark important sections.</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-5 flex flex-col gap-3">
-                    {book.pins && book.pins.length > 0 ? (
-                      book.pins.sort((a, b) => a.page - b.page).map(pin => (
-                        <button
-                          key={pin.id}
-                          onClick={() => handlePageChange(pin.page)}
-                          className={cn(
-                            "flex items-center gap-3 p-3 rounded-xl transition-all text-left group",
-                            theme === 'dark' ? "bg-white/5 hover:bg-white/10" : "bg-black/5 hover:bg-black/10"
-                          )}
-                        >
-                          <div className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm" style={{ backgroundColor: `${pin.color}20` }}>
-                            <Paperclip className="w-4 h-4" style={{ color: pin.color }} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium">Page {pin.page + 1}</div>
-                            <div className="text-[10px] text-zinc-500 truncate">Bookmark Pin</div>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const updatedBook = { ...book, pins: book.pins!.filter(p => p.id !== pin.id) };
-                              setBook(updatedBook);
-                              saveBook(updatedBook);
-                            }}
-                            className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 rounded-md transition-all"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-center text-sm text-zinc-500 px-4 gap-4 mt-20">
-                        <Paperclip className="w-8 h-8 opacity-20" />
-                        <p>No bookmarks yet. Use the paperclip tool to pin important pages.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {sidebarTab === 'ai' && (
-                <div className={`p-5 border-t ${theme === 'dark' ? 'border-white/5' : 'border-black/5'}`}>
-                  <div className="relative">
-                    <textarea
-                      value={aiQuery}
-                      onChange={e => setAiQuery(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleAskAi();
-                        }
-                      }}
-                      placeholder="Ask something..."
-                      className={`w-full rounded-2xl pl-4 pr-12 py-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all ${theme === 'dark' ? 'bg-white/5 text-white placeholder-zinc-500' : 'bg-black/5 text-zinc-900 placeholder-zinc-400'}`}
-                      rows={2}
-                    />
-                    <button 
-                      onClick={() => handleAskAi()}
-                      disabled={isAiLoading || !aiQuery.trim()}
-                      className="absolute right-2 bottom-2 p-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-500 disabled:opacity-50 text-white rounded-xl transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
-                    >
-                      {isAiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowLeft className="w-4 h-4 rotate-180" />}
-                    </button>
-                  </div>
-                </div>
-              )}
+              <button 
+                onClick={() => {
+                  const newHighlight: Highlight = {
+                    id: uuidv4(),
+                    page: currentPage,
+                    x: 0, y: 0, width: 0, height: 0, // Placeholder for text selection
+                    color: highlightColor,
+                    text: selectionMenu.text
+                  };
+                  const updatedBook = { ...book, highlights: [...(book.highlights || []), newHighlight] };
+                  setBook(updatedBook);
+                  saveBook(updatedBook);
+                  setSelectionMenu(null);
+                }}
+                className="p-2 hover:bg-green hover:text-obsidian transition-all rounded-none flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
+              >
+                <Highlighter className="w-3 h-3" /> Highlight
+              </button>
+              <div className="w-px h-4 bg-white/10" />
+              <button 
+                onClick={() => {
+                  handleAskAi(`Explain this text: "${selectionMenu.text}"`);
+                  setSelectionMenu(null);
+                }}
+                className="p-2 hover:bg-green hover:text-obsidian transition-all rounded-none flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
+              >
+                <Sparkles className="w-3 h-3" /> Explain
+              </button>
+              <div className="w-px h-4 bg-white/10" />
+              <button 
+                onClick={() => {
+                  navigator.clipboard.writeText(selectionMenu.text);
+                  setSelectionMenu(null);
+                }}
+                className="p-2 hover:bg-green hover:text-obsidian transition-all rounded-none flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
+              >
+                Copy
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Immersive Progress Bar */}
+        <div className="fixed bottom-0 left-0 w-full z-40 px-8 py-6 pointer-events-none">
+          <div className="max-w-4xl mx-auto flex items-center gap-6 pointer-events-auto">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-silver w-12">{currentPage + 1}</span>
+            <div className="flex-1 h-1 bg-white/5 rounded-none overflow-hidden relative group cursor-pointer">
+              <div 
+                className="absolute top-0 left-0 h-full bg-green transition-all duration-300"
+                style={{ width: `${((currentPage + 1) / book.totalPages) * 100}%` }}
+              />
+              <input 
+                type="range"
+                min="0"
+                max={book.totalPages - 1}
+                value={currentPage}
+                onChange={(e) => handlePageChange(Number(e.target.value))}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-silver w-12 text-right">{book.totalPages}</span>
+          </div>
+        </div>
       </main>
 
-      {/* Selection Toolbar */}
+      {/* AI Assistant Sidebar */}
       <AnimatePresence>
-        {selectionMenu && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 10 }}
-            className="fixed z-[100] -translate-x-1/2 -translate-y-full mb-4 flex items-center gap-1 p-1 bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-full shadow-2xl"
-            style={{ left: selectionMenu.x, top: selectionMenu.y }}
+        {aiPanelOpen && (
+          <motion.aside
+            initial={{ x: 400 }}
+            animate={{ x: 0 }}
+            exit={{ x: 400 }}
+            className="fixed top-0 right-0 h-full w-[400px] z-[60] bg-obsidian border-l border-white/10 shadow-2xl flex flex-col"
           >
-            <button
-              onClick={() => {
-                // Trigger highlight logic
-                // Since we have the text and selection, we can try to highlight it
-                // For now, we'll just turn on highlight mode and let the user click
-                // or we could try to automate it if we had the range
-                setIsHighlightMode(true);
-                setSelectionMenu(null);
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 rounded-full text-xs font-medium text-white transition-colors"
-            >
-              <Highlighter className="w-3.5 h-3.5 text-emerald-500" />
-              Highlight
-            </button>
-            <div className="w-px h-4 bg-white/10 mx-1" />
-            <button
-              onClick={() => {
-                const query = `Explain this text from the book: "${selectionMenu.text}"`;
-                setAiQuery(query);
-                setAiPanelOpen(true);
-                setSidebarTab('ai');
-                handleAskAi(query);
-                setSelectionMenu(null);
-                window.getSelection()?.removeAllRanges();
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 rounded-full text-xs font-medium text-white transition-colors"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-              Ask AI
-            </button>
-            <button
-              onClick={() => {
-                setSelectionMenu(null);
-                window.getSelection()?.removeAllRanges();
-              }}
-              className="p-1.5 hover:bg-white/10 rounded-full text-zinc-400 transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </motion.div>
+            <div className="p-6 border-b border-white/10 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green">
+                  <Sparkles className="w-5 h-5 text-obsidian" />
+                </div>
+                <h3 className="text-lg font-display uppercase tracking-tighter">AI Assistant</h3>
+              </div>
+              <button 
+                onClick={() => setAiPanelOpen(false)}
+                className="p-2 hover:bg-white/10 transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex border-b border-white/10">
+              {(['ai', 'bookmarks', 'highlights'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setSidebarTab(tab)}
+                  className={cn(
+                    "flex-1 py-4 text-[10px] font-bold uppercase tracking-[0.2em] transition-all relative",
+                    sidebarTab === tab ? "text-green" : "text-silver hover:text-snow"
+                  )}
+                >
+                  {tab}
+                  {sidebarTab === tab && (
+                    <motion.div layoutId="tab-indicator" className="absolute bottom-0 left-0 w-full h-0.5 bg-green" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <AnimatePresence mode="wait">
+                {sidebarTab === 'ai' && (
+                  <motion.div
+                    key="ai-tab"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-6"
+                  >
+                    <button 
+                      onClick={() => handleAskAi("Summarize this page and explain the key concepts.")}
+                      className="w-full py-4 bg-green text-obsidian text-xs font-bold uppercase tracking-widest hover:bg-snow transition-all flex items-center justify-center gap-3"
+                    >
+                      <Zap className="w-4 h-4" /> Explain Page
+                    </button>
+
+                    {aiResponse && (
+                      <div className="bg-white/5 p-6 border border-white/10">
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className="w-1 h-4 bg-green" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-silver">Response</span>
+                        </div>
+                        <div className="text-silver text-sm leading-relaxed font-light whitespace-pre-wrap">
+                          {aiResponse}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {isAiLoading && (
+                      <div className="flex flex-col items-center py-12 gap-4">
+                        <Loader2 className="w-8 h-8 text-green animate-spin" />
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-silver animate-pulse">Processing...</span>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
+                {sidebarTab === 'bookmarks' && (
+                  <motion.div
+                    key="bookmarks-tab"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-4"
+                  >
+                    {(book.pins || []).length === 0 ? (
+                      <div className="text-center py-12">
+                        <Paperclip className="w-12 h-12 text-silver/10 mx-auto mb-4" />
+                        <p className="text-silver uppercase tracking-widest text-[10px] font-bold">No bookmarks yet</p>
+                      </div>
+                    ) : (
+                      (book.pins || []).map(pin => (
+                        <div 
+                          key={pin.id}
+                          className="bg-white/5 p-4 border border-white/10 flex items-center justify-between group"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: pin.color }} />
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold uppercase tracking-widest">Page {pin.page + 1}</span>
+                              <span className="text-[10px] text-silver uppercase tracking-widest">Bookmark</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handlePageChange(pin.page)}
+                              className="p-2 hover:bg-green hover:text-obsidian transition-all"
+                            >
+                              Go to
+                            </button>
+                            <button 
+                              onClick={() => removePin(pin.id)}
+                              className="p-2 hover:bg-red-500 text-snow transition-all opacity-0 group-hover:opacity-100"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </motion.div>
+                )}
+
+                {sidebarTab === 'highlights' && (
+                  <motion.div
+                    key="highlights-tab"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-4"
+                  >
+                    {(book.highlights || []).length === 0 ? (
+                      <div className="text-center py-12">
+                        <Highlighter className="w-12 h-12 text-silver/10 mx-auto mb-4" />
+                        <p className="text-silver uppercase tracking-widest text-[10px] font-bold">No highlights yet</p>
+                      </div>
+                    ) : (
+                      (book.highlights || []).map(h => (
+                        <div 
+                          key={h.id}
+                          className="bg-white/5 p-4 border border-white/10 space-y-3 group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: h.color }} />
+                              <span className="text-[10px] font-bold uppercase tracking-widest text-silver">Page {h.page + 1}</span>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                onClick={() => handleAskAi(`Explain this highlight: "${h.text}"`)}
+                                className="p-1.5 hover:bg-green hover:text-obsidian transition-all"
+                                title="Explain with AI"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                              </button>
+                              <button 
+                                onClick={() => removeHighlight(h.id)}
+                                className="p-1.5 hover:bg-red-500 text-snow transition-all"
+                                title="Remove Highlight"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          {h.text && (
+                            <p className="text-xs text-snow/80 leading-relaxed italic border-l border-white/10 pl-3">
+                              "{h.text}"
+                            </p>
+                          )}
+                          <button 
+                            onClick={() => handlePageChange(h.page)}
+                            className="text-[10px] font-bold uppercase tracking-widest text-green hover:text-snow transition-colors"
+                          >
+                            Jump to Page
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {sidebarTab === 'ai' && (
+              <div className="p-6 border-t border-white/10 bg-white/5">
+                <div className="relative">
+                  <textarea
+                    value={aiQuery}
+                    onChange={e => setAiQuery(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleAskAi())}
+                    placeholder="ASK AI SOMETHING..."
+                    className="w-full bg-obsidian border border-white/10 p-4 pr-12 text-xs uppercase tracking-widest focus:outline-none focus:border-green resize-none min-h-[100px] placeholder:text-silver/30"
+                  />
+                  <button 
+                    onClick={() => handleAskAi()}
+                    disabled={isAiLoading || !aiQuery.trim()}
+                    className="absolute bottom-4 right-4 p-2 bg-green text-obsidian disabled:opacity-50 hover:bg-snow transition-all"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </motion.aside>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 };
