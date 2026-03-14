@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the user" },
+        "email": { "type": "string", "description": "Email address" },
+        "collegeName": { "type": "string", "description": "Name of the college" },
+        "rollNumber": { "type": "string", "description": "Roll number of the student" },
+        "curriculum": { "type": "string", "description": "Curriculum (e.g., Polytechnic Telangana, India)" },
+        "branch": { "type": "string", "description": "Branch of study" },
+        "yearOfCourse": { "type": "string", "description": "Year of course" }
+      },
+      "required": ["name", "email", "collegeName", "rollNumber", "curriculum", "branch", "yearOfCourse"]
+    },
+    "Book": {
+      "title": "Book",
+      "description": "A book in the user's library",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The title of the book" },
+        "coverUrl": { "type": "string", "description": "A base64 data URL for the book cover" },
+        "currentPage": { "type": "number", "description": "The current page the user is reading" },
+        "totalPages": { "type": "number", "description": "Total number of pages in the book" },
+        "lastOpened": { "type": "number", "description": "Timestamp of when the book was last opened" },
+        "type": { "type": "string", "description": "The type of the book file (e.g., pdf)" }
+      },
+      "required": ["title", "currentPage", "totalPages", "lastOpened", "type"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/books/{bookId}": {
+      "schema": { "$ref": "#/entities/Book" },
+      "description": "The books in the user's library"
+    }
+  }
+}
