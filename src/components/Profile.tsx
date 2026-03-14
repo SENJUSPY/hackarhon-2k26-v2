@@ -1,135 +1,233 @@
 import React, { useState, useEffect } from 'react';
-import { db, logOut } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { User, updateProfile as updateAuthProfile } from 'firebase/auth';
-import { X, Edit2, Save, LogOut, Loader2, User as UserIcon } from 'lucide-react';
-
-interface UserData {
-  name: string;
-  email: string;
-}
+import { User as FirebaseUser } from 'firebase/auth';
+import { motion } from 'framer-motion';
+import { 
+  User as UserIcon, 
+  Mail, 
+  GraduationCap, 
+  Hash, 
+  BookOpen, 
+  Award,
+  Edit2,
+  Check,
+  X
+} from 'lucide-react';
 
 interface ProfileProps {
-  user: User;
+  user: FirebaseUser;
   onClose: () => void;
 }
 
-export function Profile({ user, onClose }: ProfileProps) {
-  const [userData, setUserData] = useState<UserData | null>(null);
+export const Profile = ({ user, onClose }: ProfileProps) => {
+  const [profile, setProfile] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [editedProfile, setEditedProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [editName, setEditName] = useState('');
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const docRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as UserData;
-          setUserData(data);
-          setEditName(data.name);
-        }
-      } catch (error) {
-        console.error('Error fetching user data', error);
-      } finally {
-        setLoading(false);
+    const fetchProfile = async () => {
+      const docRef = doc(db, 'users', user.uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setProfile(data);
+        setEditedProfile(data);
       }
+      setLoading(false);
     };
-    fetchUserData();
+    fetchProfile();
   }, [user.uid]);
 
   const handleSave = async () => {
-    setSaving(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), { name: editName });
-      await updateAuthProfile(user, { displayName: editName });
-      setUserData(prev => prev ? { ...prev, name: editName } : null);
+      const docRef = doc(db, 'users', user.uid);
+      await updateDoc(docRef, editedProfile);
+      setProfile(editedProfile);
       setIsEditing(false);
     } catch (error) {
-      console.error('Error updating profile', error);
-    } finally {
-      setSaving(false);
+      console.error('Error updating profile:', error);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="fixed inset-0 bg-obsidian/90 backdrop-blur-sm z-[100] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-green animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return null;
 
   return (
-    <div className="fixed inset-0 bg-obsidian/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-obsidian border border-white/10 w-full max-w-lg rounded-none shadow-2xl overflow-hidden">
-        <div className="p-6 border-b border-white/10 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <UserIcon className="w-5 h-5 text-green" />
-            <h2 className="text-lg font-display uppercase tracking-tighter text-snow">User Profile</h2>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-8 space-y-8">
-          <div className="flex flex-col items-center text-center">
-            <div className="w-24 h-24 bg-green text-obsidian rounded-none flex items-center justify-center text-4xl font-bold mb-4">
-              {userData?.name?.charAt(0) || user.email?.charAt(0)}
-            </div>
-            {isEditing ? (
-              <div className="w-full max-w-xs">
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 px-4 py-2 text-center text-snow focus:outline-none focus:border-green"
-                  autoFocus
-                />
-              </div>
-            ) : (
-              <h3 className="text-2xl text-snow font-display uppercase tracking-tight">{userData?.name}</h3>
-            )}
-            <p className="text-silver/50 text-sm mt-1">{user.email}</p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 pt-4">
-            <div className="p-4 bg-white/5 border border-white/5">
-              <span className="text-[10px] uppercase tracking-widest text-silver/40 block mb-1">Account ID</span>
-              <span className="text-xs font-mono text-silver truncate block">{user.uid}</span>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-dark/90 backdrop-blur-md">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="max-w-4xl w-full bg-bg rounded-[3rem] overflow-hidden shadow-2xl flex flex-col md:flex-row"
+      >
+        {/* Left Side - Visual */}
+        <div className="md:w-1/3 bg-dark p-12 text-bg flex flex-col items-center text-center">
+          <div className="w-32 h-32 bg-accent rounded-full flex items-center justify-center mb-8 relative group">
+            <UserIcon className="w-16 h-16 text-dark" />
+            <div className="absolute inset-0 bg-dark/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
+              <Edit2 className="w-6 h-6" />
             </div>
           </div>
-        </div>
+          <h2 className="text-3xl font-display leading-none mb-2">{profile?.name || 'Scholar'}</h2>
+          <p className="text-muted/40 text-sm font-body mb-8">{profile?.email}</p>
+          
+          <div className="w-full space-y-4">
+            <div className="bg-muted/5 p-4 rounded-2xl border border-muted/10">
+              <div className="text-[10px] uppercase font-bold tracking-widest text-accent mb-1">Status</div>
+              <div className="font-display text-xl uppercase">{profile?.course || 'STUDENT'}</div>
+            </div>
+            <div className="bg-muted/5 p-4 rounded-2xl border border-muted/10">
+              <div className="text-[10px] uppercase font-bold tracking-widest text-accent mb-1">Academic Rank</div>
+              <div className="font-display text-xl">TOP SCHOLAR</div>
+            </div>
+          </div>
 
-        <div className="p-6 bg-white/5 border-t border-white/10 flex gap-4">
-          {isEditing ? (
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-1 bg-green text-obsidian py-3 uppercase text-xs font-bold tracking-widest hover:bg-snow transition-all flex items-center justify-center gap-2"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              Save Changes
-            </button>
-          ) : (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex-1 border border-white/20 text-snow py-3 uppercase text-xs font-bold tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2"
-            >
-              <Edit2 className="w-4 h-4" /> Edit Profile
-            </button>
-          )}
-          <button
-            onClick={() => logOut()}
-            className="px-6 border border-red-500/30 text-red-500 py-3 uppercase text-xs font-bold tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
+          <button 
+            onClick={onClose}
+            className="mt-auto flex items-center gap-2 text-muted/40 hover:text-bg transition-colors text-xs uppercase font-bold tracking-widest"
           >
-            <LogOut className="w-4 h-4" /> Sign Out
+            <X className="w-4 h-4" /> Close Profile
           </button>
         </div>
-      </div>
+
+        {/* Right Side - Details */}
+        <div className="md:w-2/3 p-12 overflow-y-auto max-h-[90vh]">
+          <div className="flex justify-between items-center mb-12">
+            <h3 className="text-4xl font-display text-dark leading-none">ACADEMIC PROFILE</h3>
+            <button 
+              onClick={() => isEditing ? handleSave() : setIsEditing(true)}
+              className={`p-3 rounded-2xl transition-all ${isEditing ? 'bg-accent text-dark' : 'bg-muted/10 text-dark hover:bg-dark hover:text-bg'}`}
+            >
+              {isEditing ? <Check className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-dark/30 flex items-center gap-2">
+                <UserIcon className="w-3 h-3" /> Full Name
+              </label>
+              {isEditing ? (
+                <input 
+                  type="text" 
+                  value={editedProfile.name}
+                  onChange={(e) => setEditedProfile({...editedProfile, name: e.target.value})}
+                  className="w-full px-4 py-3 bg-muted/10 rounded-xl outline-none focus:ring-2 focus:ring-accent font-body"
+                />
+              ) : (
+                <div className="text-lg font-body text-dark">{profile?.name}</div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-dark/30 flex items-center gap-2">
+                <Hash className="w-3 h-3" /> Roll Number
+              </label>
+              {isEditing ? (
+                <input 
+                  type="text" 
+                  value={editedProfile.rollNumber}
+                  onChange={(e) => setEditedProfile({...editedProfile, rollNumber: e.target.value})}
+                  className="w-full px-4 py-3 bg-muted/10 rounded-xl outline-none focus:ring-2 focus:ring-accent font-body"
+                />
+              ) : (
+                <div className="text-lg font-body text-dark">{profile?.rollNumber}</div>
+              )}
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-[10px] uppercase font-bold text-dark/30 flex items-center gap-2">
+                <GraduationCap className="w-3 h-3" /> College Name
+              </label>
+              {isEditing ? (
+                <input 
+                  type="text" 
+                  value={editedProfile.collegeName}
+                  onChange={(e) => setEditedProfile({...editedProfile, collegeName: e.target.value})}
+                  className="w-full px-4 py-3 bg-muted/10 rounded-xl outline-none focus:ring-2 focus:ring-accent font-body"
+                />
+              ) : (
+                <div className="text-lg font-body text-dark">{profile?.collegeName}</div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-dark/30 flex items-center gap-2">
+                <Award className="w-3 h-3" /> Branch
+              </label>
+              {isEditing ? (
+                <input 
+                  type="text" 
+                  value={editedProfile.branch}
+                  onChange={(e) => setEditedProfile({...editedProfile, branch: e.target.value})}
+                  className="w-full px-4 py-3 bg-muted/10 rounded-xl outline-none focus:ring-2 focus:ring-accent font-body"
+                />
+              ) : (
+                <div className="text-lg font-body text-dark">{profile?.branch}</div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-dark/30 flex items-center gap-2">
+                <GraduationCap className="w-3 h-3" /> Course
+              </label>
+              {isEditing ? (
+                <select 
+                  value={editedProfile.course}
+                  onChange={(e) => setEditedProfile({...editedProfile, course: e.target.value})}
+                  className="w-full px-4 py-3 bg-muted/10 rounded-xl outline-none focus:ring-2 focus:ring-accent font-body"
+                >
+                  <option value="btech">B.Tech</option>
+                  <option value="diploma">Diploma</option>
+                </select>
+              ) : (
+                <div className="text-lg font-body text-dark uppercase">{profile?.course}</div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold text-dark/30 flex items-center gap-2">
+                <BookOpen className="w-3 h-3" /> Year of Course
+              </label>
+              {isEditing ? (
+                <select 
+                  value={editedProfile.yearOfCourse}
+                  onChange={(e) => setEditedProfile({...editedProfile, yearOfCourse: e.target.value})}
+                  className="w-full px-4 py-3 bg-muted/10 rounded-xl outline-none focus:ring-2 focus:ring-accent font-body"
+                >
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                </select>
+              ) : (
+                <div className="text-lg font-body text-dark">{profile?.yearOfCourse}</div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-12 p-8 bg-dark rounded-3xl text-bg">
+            <div className="flex items-center justify-between mb-6">
+              <h4 className="font-display text-xl">ACADEMIC PROGRESS</h4>
+              <BookOpen className="w-5 h-5 text-accent" />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-3xl font-display text-accent">12</div>
+                <div className="text-[8px] uppercase font-bold tracking-widest opacity-40">Resources Read</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-display text-accent">2.4k</div>
+                <div className="text-[8px] uppercase font-bold tracking-widest opacity-40">Pages Studied</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-display text-accent">48h</div>
+                <div className="text-[8px] uppercase font-bold tracking-widest opacity-40">Study Time</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
-}
+};

@@ -1,71 +1,92 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&family=DM+Sans:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
 @import "tailwindcss";
+@import "driver.js/dist/driver.css";
 
 @theme {
+  --color-bg: #efedef;
+  --color-muted: #ceccce;
+  --color-accent: #6ead3a;
+  --color-body: #4c4947;
+  --color-dark: #222022;
+
+  --font-display: "Syne", sans-serif;
+  --font-body: "DM Sans", sans-serif;
+
+  /* Legacy compatibility for existing components */
   --color-snow: #efedef;
   --color-silver: #ceccce;
   --color-green: #6ead3a;
   --color-graphite: #4c4947;
   --color-obsidian: #222022;
+}
 
-  --font-display: "Barlow Condensed", sans-serif;
-  --font-body: "DM Sans", sans-serif;
+.poly-driver-popover {
+  background-color: #222022 !important;
+  color: #efedef !important;
+  border-radius: 1.5rem !important;
+  border: 1px solid rgba(206, 204, 206, 0.2) !important;
+  padding: 1.5rem !important;
+}
 
-  /* Overriding zinc for existing components to adapt partially */
-  --color-zinc-950: #222022;
-  --color-zinc-900: #222022;
-  --color-zinc-800: #4c4947;
-  --color-zinc-700: #4c4947;
-  --color-zinc-600: #ceccce;
-  --color-zinc-500: #ceccce;
-  --color-zinc-400: #efedef;
-  --color-zinc-300: #efedef;
-  --color-zinc-200: #efedef;
-  --color-zinc-100: #efedef;
+.poly-driver-popover .driver-popover-title {
+  font-family: "Syne", sans-serif !important;
+  font-size: 1.25rem !important;
+  color: #6ead3a !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
 
-  --color-emerald-500: #6ead3a;
-  --color-emerald-600: #6ead3a;
+.poly-driver-popover .driver-popover-description {
+  font-family: "DM Sans", sans-serif !important;
+  font-size: 0.875rem !important;
+  color: #ceccce !important;
+  line-height: 1.6 !important;
+}
 
-  --text-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --text-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.5);
+.poly-driver-popover .driver-popover-footer button {
+  background-color: #6ead3a !important;
+  color: #222022 !important;
+  font-family: "Syne", sans-serif !important;
+  text-transform: uppercase !important;
+  font-weight: bold !important;
+  border-radius: 0.75rem !important;
+  text-shadow: none !important;
 }
 
 @layer base {
   body {
-    @apply font-body bg-snow text-graphite;
+    @apply font-body bg-bg text-body;
   }
   
   h1, h2, h3, h4, h5, h6 {
-    @apply font-display uppercase tracking-wider;
+    @apply font-display uppercase tracking-widest;
   }
 }
 
-.green-underline {
-  position: relative;
+.flip-book {
+  box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.5);
+  display: block;
+  margin: 0 auto;
 }
 
-.green-underline::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  width: 0;
-  height: 2px;
-  background-color: #6ead3a;
-  transition: width 0.3s ease;
+.page {
+  padding: 20px;
+  background-color: white;
+  color: #333;
+  border: solid 1px #c2c2c2;
+  overflow: hidden;
 }
 
-.green-underline:hover::after {
+.page.-hard {
+  background-color: #e3e3e3;
+  border: solid 1px #999;
+}
+
+.page-content {
   width: 100%;
-}
-
-.fade-in-up {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
-}
-
-.fade-in-up.visible {
-  opacity: 1;
-  transform: translateY(0);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
 }

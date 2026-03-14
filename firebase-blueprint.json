@@ -11,9 +11,12 @@
         "rollNumber": { "type": "string", "description": "Roll number of the student" },
         "curriculum": { "type": "string", "description": "Curriculum (e.g., Polytechnic Telangana, India)" },
         "branch": { "type": "string", "description": "Branch of study" },
-        "yearOfCourse": { "type": "string", "description": "Year of course" }
+        "yearOfCourse": { "type": "string", "description": "Year of course" },
+        "course": { "type": "string", "description": "Selected course (btech/diploma)" },
+        "onboardingCompleted": { "type": "boolean", "description": "Whether onboarding is finished" },
+        "emailVerified": { "type": "boolean", "description": "Whether email is verified" }
       },
-      "required": ["name", "email", "collegeName", "rollNumber", "curriculum", "branch", "yearOfCourse"]
+      "required": ["name", "email", "collegeName", "rollNumber", "curriculum", "branch", "yearOfCourse", "course", "onboardingCompleted", "emailVerified"]
     },
     "Book": {
       "title": "Book",
@@ -34,6 +37,10 @@
     "/users/{userId}/books/{bookId}": {
       "schema": { "$ref": "#/entities/Book" },
       "description": "The books in the user's library"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "The user's profile"
     }
   }
 }

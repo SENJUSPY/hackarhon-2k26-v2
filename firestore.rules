@@ -1,84 +1,83 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
     // ===============================================================
     // Assumed Data Model
     // ===============================================================
     //
-    // Collection: users/{userId}
-    // Document ID: userId
+    // Collection: users
+    // Document ID: {userId}
     // Fields:
-    //   - name: string (required, < 100 chars)
-    //   - email: string (required, < 100 chars)
-    //   - collegeName: string (required, < 200 chars)
-    //   - rollNumber: string (required, < 50 chars)
-    //   - curriculum: string (required, < 100 chars)
-    //   - branch: string (required, < 100 chars)
-    //   - yearOfCourse: string (required, < 20 chars)
+    //   - name: string (required)
+    //   - email: string (required)
+    //   - collegeName: string (required)
+    //   - rollNumber: string (required)
+    //   - curriculum: string (required)
+    //   - branch: string (required)
+    //   - yearOfCourse: string (required)
     //
     // Collection: users/{userId}/books
-    // Document ID: bookId
+    // Document ID: {bookId}
     // Fields:
-    //   - title: string (required, < 200 chars)
-    //   - coverUrl: string (optional, < 1000000 chars)
-    //   - currentPage: number (required, >= 0)
-    //   - totalPages: number (required, > 0)
+    //   - title: string (required)
+    //   - coverUrl: string (optional)
+    //   - currentPage: number (required)
+    //   - totalPages: number (required)
     //   - lastOpened: number (required)
-    //   - type: string (required, < 10 chars)
+    //   - type: string (required)
     //
+    // ===============================================================
+
     // ===============================================================
     // Helper Functions
     // ===============================================================
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    function isAdmin() {
-      return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "jashwanthjs1128@gmail.com" && request.auth.token.email_verified == true));
-    }
-    
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
-    
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
-    }
-    
-    function isValidBook(data) {
-      return data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
-             data.currentPage is number && data.currentPage >= 0 &&
-             data.totalPages is number && data.totalPages > 0 &&
-             data.lastOpened is number &&
-             data.type is string && data.type.size() < 10 &&
-             (!('coverUrl' in data) || (data.coverUrl is string && data.coverUrl.size() < 1000000));
-    }
 
     function isValidUser(data) {
-      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.email is string && data.email.size() > 0 && data.email.size() < 100 &&
-             data.collegeName is string && data.collegeName.size() > 0 && data.collegeName.size() < 200 &&
-             data.rollNumber is string && data.rollNumber.size() > 0 && data.rollNumber.size() < 50 &&
-             data.curriculum is string && data.curriculum.size() > 0 && data.curriculum.size() < 100 &&
-             data.branch is string && data.branch.size() > 0 && data.branch.size() < 100 &&
-             data.yearOfCourse is string && data.yearOfCourse.size() > 0 && data.yearOfCourse.size() < 20;
+      return data.keys().hasAll(['name', 'email', 'collegeName', 'rollNumber', 'curriculum', 'branch', 'yearOfCourse', 'onboardingCompleted', 'course', 'emailVerified']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && data.email == request.auth.token.email &&
+             data.collegeName is string && data.collegeName.size() < 200 &&
+             data.rollNumber is string && data.rollNumber.size() < 50 &&
+             data.curriculum is string &&
+             data.branch is string &&
+             data.yearOfCourse is string &&
+             data.onboardingCompleted is bool &&
+             data.course in ['btech', 'diploma'] &&
+             data.emailVerified is bool;
+    }
+
+    function isValidBook(data) {
+      return data.keys().hasAll(['title', 'currentPage', 'totalPages', 'lastOpened', 'type']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.currentPage is number && data.currentPage >= 0 &&
+             data.totalPages is number && data.totalPages >= 0 &&
+             data.lastOpened is number &&
+             data.type is string &&
+             (!('coverUrl' in data) || (data.coverUrl is string && data.coverUrl.size() < 2000000)); // ~2MB limit for base64
     }
 
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && hasRequiredFields(['name', 'email', 'collegeName', 'rollNumber', 'curriculum', 'branch', 'yearOfCourse']) && isValidUser(request.resource.data);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
       allow update: if isOwner(userId) && isValidUser(request.resource.data);
-      allow delete: if isOwner(userId);
       
       match /books/{bookId} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId) && hasRequiredFields(['title', 'currentPage', 'totalPages', 'lastOpened', 'type']) && isValidBook(request.resource.data);
+        allow create: if isOwner(userId) && isValidBook(request.resource.data);
         allow update: if isOwner(userId) && isValidBook(request.resource.data);
         allow delete: if isOwner(userId);
       }
+    }
+
+    match /test/connection {
+      allow read: if true;
     }
   }
 }

@@ -1,5 +1,4 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -11,42 +10,63 @@ interface State {
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+  public state: State = {
+    hasError: false,
+    error: null,
+  };
 
-  static getDerivedStateFromError(error: Error): State {
+  public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
   }
 
-  render() {
+  public render() {
     if (this.state.hasError) {
+      let errorMessage = 'An unexpected error occurred.';
+      let errorDetails = null;
+
+      try {
+        if (this.state.error?.message) {
+          const parsed = JSON.parse(this.state.error.message);
+          if (parsed.error && parsed.operationType) {
+            errorMessage = `Firestore ${parsed.operationType} error: ${parsed.error}`;
+            errorDetails = parsed;
+          } else {
+            errorMessage = this.state.error.message;
+          }
+        }
+      } catch (e) {
+        errorMessage = this.state.error?.message || errorMessage;
+      }
+
       return (
-        <div className="min-h-screen bg-obsidian flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 p-8 rounded-none shadow-2xl text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-500/10 rounded-none mb-6">
-              <AlertCircle className="w-8 h-8 text-red-500" />
+        <div className="min-h-screen bg-dark flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-bg p-8 rounded-[2rem] shadow-2xl border border-muted/20">
+            <h2 className="text-3xl font-display text-dark mb-4 leading-none">SOMETHING WENT WRONG</h2>
+            <div className="bg-red-50 border border-red-100 p-4 rounded-2xl mb-6">
+              <p className="text-red-600 text-sm font-body">
+                {errorMessage}
+              </p>
+              {errorDetails && (
+                <div className="mt-2 pt-2 border-t border-red-100 text-[10px] text-red-400 font-mono break-all">
+                  Path: {errorDetails.path}
+                </div>
+              )}
             </div>
-            <h2 className="text-2xl font-display uppercase tracking-tighter text-snow mb-4">Something went wrong</h2>
-            <p className="text-silver text-sm mb-8 leading-relaxed font-light">
-              An unexpected error occurred. We've been notified and are looking into it.
-            </p>
             <button
               onClick={() => window.location.reload()}
-              className="w-full bg-green text-obsidian py-4 uppercase text-xs font-bold tracking-widest hover:bg-snow transition-all flex items-center justify-center gap-2"
+              className="w-full py-4 bg-accent text-dark font-display uppercase tracking-widest rounded-2xl hover:bg-dark hover:text-bg transition-all"
             >
-              <RefreshCw className="w-4 h-4" /> Reload Application
+              Reload Application
             </button>
           </div>
         </div>
       );
     }
 
-    return this.props.children;
+    return (this as any).props.children;
   }
 }
